@@ -89,6 +89,9 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
   Once you describe what properties (and possibly those types) each event shoud have, it will also validate events, and
   create a error event always it finds an invalid event.
   
+  Each step of the recognision of the pattern should store on the QueryStorage along with the query itself the next steps
+  for that pattern. So, for instance, your pattern is: `get-login-page(#login-page) post-login(form-id == #login-page.form-id, status-code == 200)`, then, it will add on the query storage the query: `{ :type<get-login-page> }`, and on it's data information saying that on the next it should match `{ :type<post-login>, :form-id(XXX), :status-code(200) }` when `XXX` is the `form-id` gotten from `get-login-page`.
+  
 - query storage:
   
   is a way to store queries and when the events are dispatched, find what queries match that object and that way match each part of the track.
