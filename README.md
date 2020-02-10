@@ -69,6 +69,8 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
   It should connect to N streams (log file, kinesis, kafka, eventsource, websocket, rabit MQ, etc) and following
   the given rules, generate new events.
   There is an example of it should work [here](https://github.com/FCO/EventExpressionLanguage/blob/master/bin/runner.p6)
+  Once you describe what properties (and possibly those types) each event shoud have, it will also validate events, and
+  create a error event always it finds an invalid event.
   
 - query storage:
   
