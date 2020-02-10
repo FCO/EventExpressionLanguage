@@ -1,0 +1,2 @@
+event new-event { has $value, $area }
+event new-event { has $value, $area }

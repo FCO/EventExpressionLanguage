@@ -1,0 +1,25 @@
+{
+  "name": "EventGrammar",
+  "description": "Write me!",
+  "version": "0.1",
+  "perl": "6.*",
+  "auth": "Write me!",
+  "depends": [],
+  "build-depends": [],
+  "test-depends": [],
+  "provides": {
+    "Event::AST": "lib/Event/AST.pm6",
+    "Event::AST::EventMatcher": "lib/Event/AST/EventMatcher.pm6",
+    "EventGrammar": "lib/EventGrammar.pm6",
+    "QueryStorage": "lib/QueryStorage.pm6",
+    "QueryStorage::BTree": "lib/QueryStorage/BTree.pm6",
+    "QueryStorage::BTrie::Node": "lib/QueryStorage/BTrie/Node.pm6",
+    "QueryStorage::BTries": "lib/QueryStorage/BTries.pm6",
+    "QueryStorage::Branch": "lib/QueryStorage/Branch.pm6",
+    "QueryStorage::Eq": "lib/QueryStorage/Eq.pm6",
+    "QueryStorage::List": "lib/QueryStorage/List.pm6"
+  },
+  "resources": [],
+  "license": "Write me!",
+  "source-url": "Write me!"
+}

@@ -1,0 +1,8 @@
+event bla {}
+event bli {}
+event new-event {
+    match {
+        bla(#ble)
+        bli(#ble)
+    }
+}
