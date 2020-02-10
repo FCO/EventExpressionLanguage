@@ -24,7 +24,23 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
     it should check most of things on parse time. its first draft is [here](https://github.com/FCO/EventExpressionLanguage/blob/master/lib/EventGrammar.pm6)
     and some exaples [here](https://github.com/FCO/EventExpressionLanguage/tree/master/examples) and a code to run this [here](https://github.com/FCO/EventExpressionLanguage/blob/master/bin/parser.p6)
 
-    it should be transformed into something like this:
+    Something like this:
+  ```
+  event temperature { has $value, $area }
+  event humidity    { has $value, $area }
+  event fire-risk {
+      has $temperature = #temp.value;
+      has $humidity    = #hum.value;
+      match {
+          [
+              temperature(#temp, value > 40, ?area == #hum.area )
+              &
+              humidity(#hum, value < 20, ?area == #temp.area)
+          ] 5min
+      }
+  }
+  ```
+    should be transformed into something like this:
 
   ```perl6
   my @rules =
