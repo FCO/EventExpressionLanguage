@@ -19,3 +19,7 @@ multi method add($test, \value) {
 method search($val) {
     gather { .search: $val with $!btree }
 }
+
+method del-not-matching($val) {
+    $!btree = .?del-not-matching: $val with $!btree
+}

@@ -1,5 +1,5 @@
 use QueryStorage::List;
-use QueryStorage::BTries;
+use QueryStorage::BTrees;
 use QueryStorage::Eq;
 
 unit class QueryStorage::Branch;
