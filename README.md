@@ -7,22 +7,22 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
 
   it should parse a language based on raku's grammar and raku's class
   
-  | syntax | meaning |
-  | - | - |
-  | 5min | time applied for the last construct (unitis: s, min, h, days) |
-  | [ A ] | group |
-  | A & B | A AND B in any order |
-  | A && B | A AND B on that order |
-  | A \| B | A XOR B |
-  | bla() | matches an event called `bla` |
-  | bla( value > 3 ) | matches an event called `bla` where value is greater than 3 |
-  | $ble | event propert called ble |
-  | #bli | internal name for a specific event |
-  | ?attr = #blo.attr | test if `attr` is equal to `#blo.attr` only if `#blo` is defined |
-  | [ bla( #blabla, ?id == #bleble.id ) & ble( #bleble, ?id == #blabla.id ) ] 5min | matches 2 events (`bla` and `ble`) at any order that has the same id and were dispatcher at max 5 min interval
+  | syntax                                                                         | meaning                                                                                                        |
+  | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+  | 5min                                                                           | time applied for the last construct (units: s, min, h, days)                                                   |
+  | [ A ]                                                                          | group                                                                                                          |
+  | A & B                                                                          | A AND B in any order                                                                                           |
+  | A && B                                                                         | A AND B on that order                                                                                          |
+  | A \| B                                                                         | A XOR B                                                                                                        |
+  | bla()                                                                          | matches an event called `bla`                                                                                  |
+  | bla( value > 3 )                                                               | matches an event called `bla` where value is greater than 3                                                    |
+  | $ble                                                                           | event propert called ble                                                                                       |
+  | #bli                                                                           | internal name for a specific event                                                                             |
+  | ?attr = #blo.attr                                                              | test if `attr` is equal to `#blo.attr` only if `#blo` is defined                                               |
+  | [ bla( #blabla, ?id == #bleble.id ) & ble( #bleble, ?id == #blabla.id ) ] 5min | matches 2 events (`bla` and `ble`) at any order that has the same id and were dispatcher at max 5 min interval |
 
     it should check most of things on parse time. its first draft is [here](https://github.com/FCO/EventExpressionLanguage/blob/master/lib/EventGrammar.pm6)
-    and some exaples [here](https://github.com/FCO/EventExpressionLanguage/tree/master/examples) and a code to run this [here](https://github.com/FCO/EventExpressionLanguage/blob/master/bin/parser.p6)
+    and some examples [here](https://github.com/FCO/EventExpressionLanguage/tree/master/examples) and a code to run this [here](https://github.com/FCO/EventExpressionLanguage/blob/master/bin/parser.p6)
 
     Something like this:
   ```
@@ -86,14 +86,14 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
   the given rules, generate new events.
   There are some examples of that should work [here](https://github.com/FCO/EventExpressionLanguage/blob/master/bin/runner.p6).
   
-  Once you describe what properties (and possibly those types) each event shoud have, it will also validate events, and
+  Once you describe what properties (and possibly those types) each event should have, it will also validate events, and
   create a error event always it finds an invalid event.
   
-  Each step of the recognision of the pattern should store on the QueryStorage along with the query itself the next steps
+  Each step of the recognition of the pattern should store on the QueryStorage along with the query itself the next steps
   for that pattern. So, for instance, your pattern is: `get-login-page(#login-page) post-login(form-id == #login-page.form-id, status-code == 200)`, then, it will add on the query storage the query: `{ :type<get-login-page> }`, and on it's data information saying that on the next it should match `{ :type<post-login>, :form-id(XXX), :status-code(200) }` when `XXX` is the `form-id` gotten from `get-login-page`.
   
 - query storage:
   
   is a way to store queries and when the events are dispatched, find what queries match that object and that way match each part of the track.
   currently it's being implemented [here](https://github.com/FCO/EventExpressionLanguage/blob/master/lib/QueryStorage.pm6),
-  but optimaly it should be an central process (as a database).
+  but optimally it should be an central process (as a database).
