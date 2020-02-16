@@ -7,7 +7,11 @@ token TOP {
 }
 
 token name { <[\w-]>+ }
-token mp-name { <name> ['.' <name> | '[' ~ ']' \d+ ]* }
+token mp-name { <local-var> <term>+ }
+
+proto token term      { *                  }
+token term:sym<key>   { '.' <name>         }
+token term:sym<index> { "[" ~ "]" $<i>=\d+ }
 
 proto rule declarator {*}
 rule declarator:sym<event> {
@@ -40,7 +44,7 @@ rule declare-attr:sym<setter> {
         self.parse-error: $<event-attr>, "Event '$*event-name' already defined an attr called '{$<event-attr>}'"
             if %*attrs{~$<event-attr>}:exists
     }
-    "=" $<setter>=<lval>
+    "=" <setter=.lval>
     {
         %*attrs{~$<event-attr>} = Any
     }
@@ -88,7 +92,7 @@ rule statement:sym<group> {
 
 rule event-match {
     :my $*id;
-    <name> "(" ~ ")" [ <?> <event-match-content>* %% ',' ]
+    <name> "(" ~ ")" <event-match-content>* %% ','
 }
 
 proto token st-infix-op   { *     }
@@ -118,10 +122,10 @@ token event-match-content:sym<id> {
     }
 }
 rule event-match-content:sym<condition> {
-    <mp-name> <op> <lval>
+    <name> <op> <lval>
 }
 rule event-match-content:sym<opt-condition> {
-    "?"<mp-name> <op> <lval>
+    "?"<name> <op> <lval>
 }
 token local-var  { '#' <?> <name> }
 token event-attr { '$' <?> <name> }
@@ -133,10 +137,10 @@ rule  val:sym<num> { ["+"|"-"]? \d+["."\d+]? }
 rule  val:sym<str> { (["'"|'"']) ~ $0 .*?    }
 token val:sym<var> { <vars> ['.'<name>]*     }
 
-proto rule lval         { *           }
-rule lval:sym<opration> { <operation> }
-rule lval:sym<val>      { <val>       }
-rule lval:sym<lvar>     { <local-var> }
+proto rule lval          { *           }
+rule lval:sym<operation> { <operation> }
+rule lval:sym<val>       { <val>       }
+rule lval:sym<lvar>      { <mp-name>   }
 
 proto token prefix-op    { *   }
 token prefix-op:sym<not> { "!" }

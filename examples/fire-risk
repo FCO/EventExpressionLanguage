@@ -1,6 +1,6 @@
 event temperature { has $value, $area }
 event humidity    { has $value, $area }
-event fire-risk {
+event fire-risk   {
     has $temperature = #temp.value;
     has $humidity    = #hum.value;
     match {
