@@ -1,4 +1,6 @@
 #!/usr/bin/env perl6
+use lib "lib";
+use Event::Runner;
 
 my @rules =
     {
@@ -35,45 +37,12 @@ my @rules =
     }
 ;
 
-use lib "lib";
-use QueryStorage;
-my QueryStorage $storage .= new;
+my Supplier $supplier .= new;
+my Event::Runner $runner .= new: :supply($supplier.Supply), :@rules;
 
-multi exec($_ (:$cmd where "query", |), %state = {}) {
-    say "exec add: ", .<query>, %state;
-    $storage.add: .<query>, %( :id(.<id>), :store(.<store> // []), :next(.<next>), :%state )
-}
-
-multi exec($_ (:$cmd where "dispatch", |), %state = {}) {
-    say "dispatch: ", .<data>.(%state)
-}
-
-multi exec(|c) { die "unrecognised: { c.perl }" }
+$runner.run;
 
 multi MAIN() {
-    for @rules -> %cmd {
-            exec %cmd
-    }
-    my Supplier $supplier .= new;
-    my $s = start react {
-        whenever $supplier.Supply -> %event {
-            my @data = $storage.search: %event;
-            say +@data if @data;
-            for @data {
-                my %state = .<state><> // %();
-                %state{.<id>} = %event{|.<store>}:p.Hash if .<id>:exists and .<store>.elems;
-                .<next><query> = .<next><query>.kv.map(-> $key, $_ {
-                        $key => (
-                                .key => .value ~~ Callable
-                                        ?? .value.(%state)
-                                        !! .value
-                                )
-                    }).Hash;
-
-                exec .<next>, %state
-            }
-        }
-    }
 
     sleep 1;
 
@@ -86,29 +55,6 @@ multi MAIN() {
 }
 
 multi MAIN("rand") {
-    for @rules -> %cmd {
-        exec %cmd
-    }
-    my Supplier $supplier .= new;
-    my $s = start react {
-        whenever $supplier.Supply -> %event {
-            my @data = $storage.search: %event;
-            for @data {
-                my %state = .<state><> // %();
-                %state{.<id>} = %event{|.<store>}:p.Hash if .<id>:exists and .<store>.elems;
-                .<next><query> = .<next><query>.kv.map(-> $key, $_ {
-                    $key => (
-                            .key => .value ~~ Callable
-                                    ?? .value.(%state)
-                                    !! .value
-                            )
-                }).Hash;
-
-                exec .<next>, %state
-            }
-        }
-    }
-
     sleep 1;
 
     loop {
