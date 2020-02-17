@@ -24,7 +24,8 @@
     "QueryStorage::BTrees": "lib/QueryStorage/BTrees.pm6",
     "QueryStorage::Branch": "lib/QueryStorage/Branch.pm6",
     "QueryStorage::Eq": "lib/QueryStorage/Eq.pm6",
-    "QueryStorage::List": "lib/QueryStorage/List.pm6"
+    "QueryStorage::List": "lib/QueryStorage/List.pm6",
+    "X::Event::ParseError": "lib/X/Event/ParseError.pm6"
   },
   "resources": [],
   "license": "Artistic-2.0",

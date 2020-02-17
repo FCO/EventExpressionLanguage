@@ -1,5 +1,10 @@
 #use Grammar::Tracer;
+use X::Event::ParseError;
 unit grammar EventGrammar;
+
+method parse-error($match, $msg) {
+    die X::Event::ParseError.new(:$match, :$msg)
+}
 
 token TOP {
     :my %*events;
@@ -99,16 +104,6 @@ proto token st-infix-op   { *     }
 token st-infix-op:sym<&>  { <sym> }
 token st-infix-op:sym<&&> { <sym> }
 token st-infix-op:sym<|>  { <sym> }
-
-method parse-error($_, $msg) {
-    my @prematch  = .prematch.lines;
-    my $parsed    = @prematch.tail.trim-leading;
-    my $notparsed = .target.substr: .pos, min(.pos + 15, .target.index: "\n");
-    my $line      = "\o33[32m{$parsed}\o33[33m⏏\o33[31m{.Str}\o33[m{$notparsed}";
-    note "Parsing error: ", $msg;
-    note "ERROR: $line on line { +@prematch }";
-    exit 1
-}
 
 proto rule event-match-content {*}
 token event-match-content:sym<id> {
