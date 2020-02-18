@@ -3,11 +3,11 @@ use X::Event::ParseError;
 unit grammar EventGrammar;
 
 method parse-error($match, $msg) {
-    die X::Event::ParseError.new(:$match, :$msg)
+    die X::Event::ParseError.new(:$match, :$msg, :file($*EEL-FILE))
 }
 
 token TOP {
-    :my %*events;
+#    :my %*events;
     <.ws> <declarator>* %% <.ws>
 }
 

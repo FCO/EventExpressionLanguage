@@ -1,7 +1,12 @@
 use Event::AST;
+use Event::AST::EventMatcher;
 unit class EventTranslator;
 
-multi method translate(Event::AST $ast --> Array()) {
+proto method translate(Event::AST $ast --> Array()) {*}
+multi method translate(Event::AST::EventMatcher $_) {
+
+}
+multi method translate(Event::AST) {
     {
         cmd      => "query",
         query    => %(

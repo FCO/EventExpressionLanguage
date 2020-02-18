@@ -1,7 +1,6 @@
 #!/usr/bin/env perl6
 use lib "lib";
-use EventGrammar;
-use EventAction;
+use EELParser;
 
 multi MAIN(Str $file where .IO.f) {
     CATCH {
@@ -10,7 +9,7 @@ multi MAIN(Str $file where .IO.f) {
             exit 1
         }
     }
-    say EventGrammar.parsefile($file, :actions(EventAction)).made
+    say EELParser.new.parse-file($file).made
 }
 
 multi MAIN(Str :$e) {
@@ -20,5 +19,5 @@ multi MAIN(Str :$e) {
             exit 1
         }
     }
-    say EventGrammar.parse($e, :actions(EventAction)).made
+    say EELParser.new.parse($e).made
 }

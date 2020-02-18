@@ -9,6 +9,7 @@
   "test-depends": [],
   "provides": {
     "EEL": "lib/EEL.pm6",
+    "EELParser": "lib/EELParser.pm6",
     "Event::AST": "lib/Event/AST.pm6",
     "Event::AST::Condition": "lib/Event/AST/Condition.pm6",
     "Event::AST::EventDeclatation": "lib/Event/AST/EventDeclatation.pm6",
@@ -17,6 +18,7 @@
     "Event::AST::Infix": "lib/Event/AST/Infix.pm6",
     "Event::AST::LocalVar": "lib/Event/AST/LocalVar.pm6",
     "Event::AST::NoValue": "lib/Event/AST/NoValue.pm6",
+    "Event::AST::Value": "lib/Event/AST/Value.pm6",
     "Event::Runner": "lib/Event/Runner.pm6",
     "EventAction": "lib/EventAction.pm6",
     "EventGrammar": "lib/EventGrammar.pm6",

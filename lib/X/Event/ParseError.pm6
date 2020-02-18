@@ -1,5 +1,6 @@
 unit class X::Event::ParseError is Exception;
 
+has Str   $.file  = "-e";
 has Match $.match is required;
 has Str   $.msg   = "Error parsing code";
 
@@ -11,6 +12,7 @@ method message {
     (
         "PARSING ERROR : $!msg",
         "ERROR         : $line",
+        "FILE          : $!file",
         "LINE          : { +@prematch }",
     ).join: "\n"
 }

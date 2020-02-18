@@ -5,6 +5,7 @@ use Event::AST::LocalVar;
 use Event::AST::NoValue;
 use Event::AST::Group;
 use Event::AST::Infix;
+use Event::AST::Value;
 unit class EventAction;
 
 role Attr {}
@@ -118,7 +119,7 @@ method val:sym<str>($/) {
 method val:sym<var>($/) {}
 
 method lval:sym<operation>($/) {}
-method lval:sym<val>($/)       { make $<val>.made     }
+method lval:sym<val>($/)       { make ast $<val>.made }
 method lval:sym<lvar>($/)      { make $<mp-name>.made }
 
 method prefix-op:sym<not>($/) {}
