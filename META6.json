@@ -8,6 +8,7 @@
   "build-depends": [],
   "test-depends": [],
   "provides": {
+    "EEL": "lib/EEL.pm6",
     "Event::AST": "lib/Event/AST.pm6",
     "Event::AST::Condition": "lib/Event/AST/Condition.pm6",
     "Event::AST::EventDeclatation": "lib/Event/AST/EventDeclatation.pm6",

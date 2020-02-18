@@ -40,7 +40,7 @@ my @rules =
 my Supplier $supplier .= new;
 my Event::Runner $runner .= new: :supply($supplier.Supply), :@rules;
 
-$runner.run;
+$runner.run.tap: { say "EMIT: { .perl }" };
 
 multi MAIN() {
 

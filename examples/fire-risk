@@ -5,7 +5,7 @@ event fire-risk   {
     has $humidity    = #hum.value;
     match {
         [
-            temperature(#temp, value > 40, ?area == #hum.area )
+            temperature(#temp, value > 40, ?area == #hum.area)
             &
             humidity(#hum, value < 20, ?area == #temp.area)
         ] 5min
