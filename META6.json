@@ -20,6 +20,7 @@
     "Event::Runner": "lib/Event/Runner.pm6",
     "EventAction": "lib/EventAction.pm6",
     "EventGrammar": "lib/EventGrammar.pm6",
+    "EventTranslator": "lib/EventTranslator.pm6",
     "QueryStorage": "lib/QueryStorage.pm6",
     "QueryStorage::BTree": "lib/QueryStorage/BTree.pm6",
     "QueryStorage::BTree::Node": "lib/QueryStorage/BTree/Node.pm6",

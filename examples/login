@@ -1,5 +1,5 @@
 event login {
-    has $session-id = #post.req-id;
+    has $session-id = #post.session-id;
     has $timestamp  = #post.timestamp;
     match {
         request(#get , method == "GET" , path == "/login", status == 200)
