@@ -98,7 +98,7 @@ rule statement:sym<group> {
 
 rule event-match {
     :my $*id;
-    <name> "(" ~ ")" <event-match-content>* %% ','
+    <name> "(" ~ ")" <event-match-content>* %% [<.ws> ',' <.ws>]
 }
 
 proto token st-infix-op   { *     }
