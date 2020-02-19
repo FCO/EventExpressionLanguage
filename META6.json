@@ -4,7 +4,9 @@
   "version": "0.1",
   "perl": "6.d",
   "auth": "Fernando Correa de Oliveira",
-  "depends": [],
+  "depends": [
+    "JSON::Fast"
+  ],
   "build-depends": [],
   "test-depends": [],
   "provides": {
@@ -12,7 +14,7 @@
     "EELParser": "lib/EELParser.pm6",
     "Event::AST": "lib/Event/AST.pm6",
     "Event::AST::Condition": "lib/Event/AST/Condition.pm6",
-    "Event::AST::EventDeclatation": "lib/Event/AST/EventDeclatation.pm6",
+    "Event::AST::EventDeclaration": "lib/Event/AST/EventDeclaration.pm6",
     "Event::AST::EventMatcher": "lib/Event/AST/EventMatcher.pm6",
     "Event::AST::Group": "lib/Event/AST/Group.pm6",
     "Event::AST::Infix": "lib/Event/AST/Infix.pm6",

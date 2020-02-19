@@ -1,4 +1,4 @@
-use Event::AST::EventDeclatation;
+use Event::AST::EventDeclaration;
 use Event::AST::EventMatcher;
 use Event::AST::Condition;
 use Event::AST::LocalVar;

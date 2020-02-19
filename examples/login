@@ -1,3 +1,4 @@
+event request { has $method, $path, $status, $req-id, $timestamp }
 event login {
     has $session-id = #post.session-id;
     has $timestamp  = #post.timestamp;

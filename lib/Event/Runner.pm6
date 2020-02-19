@@ -22,6 +22,7 @@ multi method init-event(%event (:$timestamp where *.defined, |)) { %event }
 multi method init-event(%event) { { |%event, :timestamp(now) } }
 
 method run() {
+    dd @!rules;
     for @!rules -> %cmd {
         self.exec: %cmd
     }

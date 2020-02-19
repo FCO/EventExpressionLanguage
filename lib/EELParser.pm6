@@ -1,5 +1,6 @@
 use EventGrammar;
 use EventAction;
+use Event::AST;
 unit class EELParser;
 
 has EventGrammar $.grammar;
@@ -12,12 +13,12 @@ method parse-file($file) {
     my $*EEL-FILE = $file;
     @!files.push: $file;
     my %*events := %!events;
-    $!grammar.parsefile: $file, :$!actions
+    Array[Event::AST].new: $!grammar.parsefile($file, :$!actions).ast;
 }
 
 method parse($code) {
     my $*EEL-FILE = "-e";
     @!files.push: "-e";
     my %*events := %!events;
-    $!grammar.parse: $code, :$!actions
+    Array[Event::AST].new: $!grammar.parse($code, :$!actions).ast
 }

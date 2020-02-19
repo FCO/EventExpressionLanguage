@@ -9,7 +9,7 @@ multi MAIN(Str $file where .IO.f) {
             exit 1
         }
     }
-    say EELParser.new.parse-file($file).made
+    say EELParser.new.parse-file: $file
 }
 
 multi MAIN(Str :$e) {
@@ -19,5 +19,5 @@ multi MAIN(Str :$e) {
             exit 1
         }
     }
-    say EELParser.new.parse($e).made
+    say EELParser.new.parse: $e
 }

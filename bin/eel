@@ -1,0 +1,16 @@
+#!/usr/bin/env raku
+
+use lib ".";
+
+use EEL;
+use JSON::Fast;
+
+subset File of Str where .IO.f;
+
+multi MAIN(File $file) {
+    eel($*IN.Supply.lines.map({ .&from-json }), :$file).tap: *.say;
+}
+
+multi MAIN(Str :e(:eval(:evaluate(:$code)))!) {
+    eel($*IN.Supply.lines.map({ .&from-json }), :$code).tap: *.say;
+}
