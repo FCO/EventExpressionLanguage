@@ -3,10 +3,11 @@
 ## Small example:
 
 ```
-for i in '{ "type" : "bla", "a" : 42 }' '{ "type" : "bla", "a" : 13 }'
-do
-  echo $i;
-done | bin/eel -e='
+$ raku -MJSON::Fast -e '
+loop {
+  say to-json :!pretty, %(:type<bla>, :a(^100 .pick))
+}
+' | bin/eel -e='
   event ble {
     has $a1 = #1.a;
     has $a2 = #2.a;
@@ -16,7 +17,17 @@ done | bin/eel -e='
     }
   }
 '
-{"type":"ble","a1":42,"timestamp":"2020-02-19T14:18:53.986815Z","a2":13}
+
+{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.055072Z","a2":13}
+{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.110054Z","a2":13}
+{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.218650Z","a2":13}
+{"a1":42,"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.259750Z"}
+{"a1":42,"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.300648Z"}
+{"timestamp":"2020-02-19T14:40:15.325864Z","type":"ble","a2":13,"a1":42}
+{"timestamp":"2020-02-19T14:40:15.357166Z","type":"ble","a2":13,"a1":42}
+{"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.371284Z","a1":42}
+{"timestamp":"2020-02-19T14:40:15.415902Z","type":"ble","a2":13,"a1":42}
+^C
 ```
 
 ## What's it?
