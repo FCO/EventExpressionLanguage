@@ -1,0 +1,7 @@
+{ "type" : "request", "method" : "GET",  "path" : "/",      "req-id" : "0000", "status" : 200                       }
+{ "type" : "request", "method" : "GET",  "path" : "/abc",   "req-id" : "0000", "status" : 200                       }
+{ "type" : "request", "method" : "GET",  "path" : "/login", "req-id" : "1234", "status" : 200                       }
+{ "type" : "request", "method" : "GET",  "path" : "/",      "req-id" : "0000", "status" : 200                       }
+{ "type" : "request", "method" : "GET",  "path" : "/",      "req-id" : "0000", "status" : 200                       }
+{ "type" : "request", "method" : "POST", "path" : "/login", "req-id" : "1234", "status" : 200, "session-id" : "xyz" }
+{ "type" : "request", "method" : "GET",  "path" : "/",      "req-id" : "0000", "status" : 200                       }
