@@ -19,6 +19,7 @@
     "Event::AST::Group": "lib/Event/AST/Group.pm6",
     "Event::AST::Infix": "lib/Event/AST/Infix.pm6",
     "Event::AST::LocalVar": "lib/Event/AST/LocalVar.pm6",
+    "Event::AST::Matcher": "lib/Event/AST/Matcher.pm6",
     "Event::AST::NoValue": "lib/Event/AST/NoValue.pm6",
     "Event::AST::Value": "lib/Event/AST/Value.pm6",
     "Event::Runner": "lib/Event/Runner.pm6",

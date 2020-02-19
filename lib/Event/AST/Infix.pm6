@@ -1,6 +1,5 @@
-use Event::AST;
-unit class Event::AST::Infix does Event::AST;
+use Event::AST::Matcher;
+unit class Event::AST::Infix does Event::AST::Matcher;
 
-has Event::AST $.left;
-has Event::AST $.right;
-has Str        $.op;
+has Str $.op;
+has     @.values;

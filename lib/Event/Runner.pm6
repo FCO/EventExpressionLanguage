@@ -22,7 +22,6 @@ multi method init-event(%event (:$timestamp where *.defined, |)) { %event }
 multi method init-event(%event) { %( |%event, :timestamp(now) )  }
 
 method run() {
-#    dd @!rules;
     for @!rules -> %cmd {
         self.exec: %cmd
     }
@@ -30,7 +29,6 @@ method run() {
         whenever $!input -> %pre-event {
             my %event = self.init-event: %pre-event;
             my @data = $!storage.search: %event;
-#            say +@data if @data;
             for @data {
                 my %state      = .<state><> // %();
                 %state{.<id>}  = %event{|.<store>}:p.Hash if .<id>:exists and .<store>.elems;

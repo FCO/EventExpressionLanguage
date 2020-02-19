@@ -65,13 +65,17 @@ method statement-time-mod($/) {
 }
 
 method statement:sym<event-match>($/) {
-    make $<st-infix-op>
-        ?? Event::AST::Infix.new:
-            :left($<event-match>.made),
-            :right($<statement>.made),
-            :op($<st-infix-op>.made)
-        !! $<event-match>.made
+     make $<event-match>.made
 }
+method infix(:$op, :@values) {
+    Event::AST::Infix.new:
+        :@values,
+        :$op
+}
+method statement:sym<&>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
+method statement:sym<&&>($/) { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
+method statement:sym<|>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
+
 method statement:sym<group>($/) {
     make Event::AST::Group.new: :body($<statement>>>.made)
 }
@@ -83,10 +87,6 @@ method event-match($/) {
             :conds[$<event-match-content>>>.made.grep: { .defined and $_ !~~ Str }],
     ;
 }
-
-method st-infix-op:sym<&>($/)  { make ~$/ }
-method st-infix-op:sym<&&>($/) { make ~$/ }
-method st-infix-op:sym<|>($/)  { make ~$/ }
 
 method event-match-content:sym<id>($/) {
     make ~$/

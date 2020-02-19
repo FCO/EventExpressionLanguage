@@ -3,15 +3,21 @@ use Event::AST::EventDeclaration;
 use Event::AST::EventMatcher;
 use Event::AST::Condition;
 use Event::AST::LocalVar;
+use Event::AST::Infix;
 use Event::AST::Group;
 use Event::AST::Infix;
 use Event::AST::Value;
+
 unit class EventTranslator;
 
 multi method translate(Event::AST @ast --> Array()) {
-#    say $?LINE;
-#    dd @ast;
-    @ = @ast.map: { self.translate: $_ }
+    my @rules;
+    for @ast {
+        for self.translate: $_ -> %rule {
+            @rules.push: %rule
+        }
+    }
+    @rules
 }
 
 multi method translate(Event::AST::LocalVar $ast) {
@@ -52,37 +58,54 @@ multi method translate(Event::AST::EventDeclaration $_ where not .body) {
     Empty
 }
 
-multi method translate(Event::AST::EventDeclaration $ast --> Hash()) {
+multi method translate(Event::AST::EventDeclaration $ast) {
 #    say $?LINE;
     my %*store = $ast.store;
-    self.translate: $ast.body, (self.translate: %( :type(ast $ast.name), |$_ ) with $ast.attrs)
+    self.translate: [
+        |$ast.body,
+        %( :type(ast $ast.name), |$ast.attrs ),
+    ]
 }
 
-multi method translate([Event::AST::EventMatcher $_, *@next ($)], %disp?) {
-#    say $?LINE;
-    %(
-        |self.translate($_),
-        :next(self.translate: @next, %disp)
-    )
-}
-
-multi method translate([Event::AST::EventMatcher $_], %disp?) { self.translate: $_, %disp }
-
-multi method translate(Event::AST::EventMatcher $_, %next?) {
-#    say $?LINE;
+multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
+#    dd %*store;
     %(
         :cmd<query>,
-        |(:id($_) with .id),
-        |(:store($_) with %*store{ .id }),
+        |(:id($_) with $ast.id),
+        |(:store($_) with %*store{ $ast.id }),
         |(
             :query(%(
-                |(:type("==" => $_) with .name),
-                |.conds.map({ self.translate: $_ })
-            )) if .conds
+                |(:type("==" => $_) with $ast.name),
+                |$ast.conds.map({ self.translate: $_ })
+            )) if $ast.conds
         ),
         :%next,
     )
 }
+
+multi method translate([Event::AST::Infix $ast where .op eq "&", *@next]) {
+    my %store := %*store;
+    $ast.values.permutations.map: {
+        my %*store = %store;
+        self.translate: [|$_, |@next]
+    }
+}
+
+multi method translate([Event::AST::Matcher $ast, *@next]) {
+#    say $?LINE;
+    do given self.translate: @next {
+        when Positional {
+            .self.map: {
+                self.prepare-event-matcher: $ast, $_
+            }
+        }
+        default {
+            self.prepare-event-matcher: $ast, $_
+        }
+    }
+}
+
+multi method translate([%next]) { self.translate: %next }
 
 multi method translate([]) {}
 
@@ -94,40 +117,4 @@ multi method translate(Event::AST::Condition $_) {
 multi method translate(Event::AST::Value $_) {
 #    say $?LINE;
     .&ast-value
-}
-
-multi method translate(Event::AST:D $_) {
-#    say $?LINE;
-#    .&dd;
-    {
-        cmd      => "query",
-        query    => %(
-            :type("==" => "request"),
-            :path("==" => "/login"),
-            :method("==" => "GET"),
-            :status("==" => 200),
-        ),
-        id       => "#get",
-        store    => < req-id >,
-        next     => {
-            cmd      => "query",
-            query    => %(
-            :type("==" => "request"),
-                    :path("==" => "/login"),
-                    :method("==" => "POST"),
-                    :req-id("==" => -> %state { %state<#get><req-id> }),
-                    :status("==" => 200),
-            ),
-            id       => "#post",
-            store    => < session-id timestamp >,
-            next     => {
-                cmd      => "dispatch",
-                data     => -> %state --> Hash() {
-                    :type<login>,
-                    :session-id(%state<#post><session-id>),
-                    :timestamp(%state<#post><timestamp>),
-                },
-            }
-        }
-    },
 }

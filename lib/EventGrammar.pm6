@@ -85,8 +85,12 @@ rule statement-time-mod {
 }
 
 proto rule statement {*}
+rule statement:sym<&>  { <sym>? <event-match>+ %% <sym> }
+rule statement:sym<&&> { <sym>? <event-match>+ %% <sym> }
+rule statement:sym<|>  { <sym>? <event-match>+ %% <sym> }
+
 rule statement:sym<event-match> {
-    <event-match> [ <st-infix-op> <statement> ]?
+    <event-match>
 }
 rule statement:sym<group> {
     :my %*local-vars := SetHash.new;
@@ -100,11 +104,6 @@ rule event-match {
     :my $*id;
     <name> "(" ~ ")" <event-match-content>* %% [<.ws> ',' <.ws>]
 }
-
-proto token st-infix-op   { *     }
-token st-infix-op:sym<&>  { <sym> }
-token st-infix-op:sym<&&> { <sym> }
-token st-infix-op:sym<|>  { <sym> }
 
 proto rule event-match-content {*}
 token event-match-content:sym<id> {

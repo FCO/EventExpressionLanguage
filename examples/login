@@ -1,7 +1,8 @@
 event request { has $method, $path, $status, $req-id, $timestamp }
 event login {
     has $session-id = #post.session-id;
-    has $timestamp  = #post.timestamp;
+    has $get-time   = #get.timestamp;
+    has $post-time  = #post.timestamp;
     match {
         request(#get , method == "GET" , path == "/login", status == 200)
         request(#post, method == "POST", path == "/login", status == 200, req-id == #get.req-id)

@@ -13,7 +13,7 @@ has Event::AST:D    @.ast     = $!file.defined
         ?? $!parser.parse-file: $!file
         !! $!parser.parse: $!code
 ;
-has                 @!rules   = |EventTranslator.new.translate: @!ast;
+has                 @.rules   = EventTranslator.new.translate: @!ast;
 has Event::Runner   $.runner .= new: :$!input, :@!rules;
 has Supply:D        $.output handles * = $!runner.run;
 
