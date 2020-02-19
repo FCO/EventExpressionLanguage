@@ -115,7 +115,7 @@ method val:sym<num>($/) {
     make +$/
 }
 method val:sym<str>($/) {
-    make ~$/
+    make ~$<str>
 }
 method val:sym<var>($/) {}
 

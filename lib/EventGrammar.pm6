@@ -130,7 +130,7 @@ token vars { <local-var> | <event-attr> }
 
 proto token val    { *                       }
 rule  val:sym<num> { ["+"|"-"]? \d+["."\d+]? }
-rule  val:sym<str> { (["'"|'"']) ~ $0 .*?    }
+rule  val:sym<str> { (["'"|'"']) ~ $0 $<str>=.*?    }
 token val:sym<var> { <vars> ['.'<name>]*     }
 
 proto rule lval          { *           }

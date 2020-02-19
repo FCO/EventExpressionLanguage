@@ -49,6 +49,7 @@ multi method translate(%attrs) {
 
 multi method translate(Event::AST::EventDeclaration $_ where not .body) {
 #    say $?LINE;
+    Empty
 }
 
 multi method translate(Event::AST::EventDeclaration $ast --> Hash()) {

@@ -7,14 +7,38 @@ use JSON::Fast;
 
 subset File of Str where .IO.f;
 
-multi MAIN(File $file) {
+multi MAIN(File $file, :l(:$log) is copy) {
+    with $log {
+        $log .= IO
+    } else {
+        $log = $*IN
+    }
     my Supplier $s .= new;
-    eel($s.Supply.map({ .&from-json }), :$file).tap: *.&to-json(:!pretty).say;
-    lines.map: { $s.emit: $_ }
+    eel($s.Supply.map({
+        CATCH {
+            default {
+                next
+            }
+        }
+        .&from-json
+    }), :$file).tap: *.&to-json(:!pretty).say;
+    $log.lines.map: { $s.emit: $_ }
 }
 
-multi MAIN(Str :e(:eval(:evaluate(:$code)))!) {
+multi MAIN(Str :e(:eval(:evaluate(:$code)))!, :l(:$log) is copy) {
+    with $log {
+        $log .= IO
+    } else {
+        $log = $*IN
+    }
     my Supplier $s .= new;
-    eel($s.Supply.map({ .&from-json }), :$code).tap: *.&to-json(:!pretty).say;
+    eel($s.Supply.map({
+        CATCH {
+            default {
+                next
+            }
+        }
+        .&from-json
+    }), :$code).tap: *.&to-json(:!pretty).say;
     lines.map: { $s.emit: $_ }
 }
