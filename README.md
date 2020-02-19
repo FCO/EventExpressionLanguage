@@ -1,5 +1,25 @@
 # EventExpressionLanguage
 
+## Small example:
+
+```
+for i in '{ "type" : "bla", "a" : 42 }' '{ "type" : "bla", "a" : 13 }'
+do
+  echo $i;
+done | bin/eel -e='
+  event ble {
+    has $a1 = #1.a;
+    has $a2 = #2.a;
+    match {
+      bla(#1, a == 42)
+      bla(#2, a == 13)
+    }
+  }
+'
+{"type":"ble","a1":42,"timestamp":"2020-02-19T14:18:53.986815Z","a2":13}
+```
+
+## What's it?
 
 It's an idea of a solution for complex event processing, it's divided into 3 main parts:
 
