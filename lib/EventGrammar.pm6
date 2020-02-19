@@ -22,6 +22,7 @@ proto rule declarator {*}
 rule declarator:sym<event> {
     :my %*local-vars := SetHash.new;
     :my $*event-name;
+    :my %*store;
     <sym> <name>
     {
         $*event-name = ~$<name>;

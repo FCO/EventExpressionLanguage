@@ -19,10 +19,10 @@ multi method exec(|c) { die "unrecognised: { c.perl }" }
 
 proto method init-event(% --> Hash()) {*}
 multi method init-event(%event (:$timestamp where *.defined, |)) { %event }
-multi method init-event(%event) { { |%event, :timestamp(now) } }
+multi method init-event(%event) { %( |%event, :timestamp(now) )  }
 
 method run() {
-    dd @!rules;
+#    dd @!rules;
     for @!rules -> %cmd {
         self.exec: %cmd
     }

@@ -16,6 +16,7 @@ method TOP($/) { make $<declarator>>>.made.grep: *.defined }
 
 method name($/) { make ~$/ }
 method mp-name($/) {
+    %*store.push: ~$<local-var> => $<term>.head.made;
     make Event::AST::LocalVar.new:
             :var-id(~$<local-var>),
             :path($<term>>>.made)
@@ -33,6 +34,7 @@ method declarator:sym<event>($/) {
             :$name,
             :%attrs,
             :@body,
+            :%*store,
     ;
 }
 
@@ -63,7 +65,6 @@ method statement-time-mod($/) {
 }
 
 method statement:sym<event-match>($/) {
-    say $<st-infix-op>;
     make $<st-infix-op>
         ?? Event::AST::Infix.new:
             :left($<event-match>.made),

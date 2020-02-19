@@ -8,9 +8,13 @@ use JSON::Fast;
 subset File of Str where .IO.f;
 
 multi MAIN(File $file) {
-    eel($*IN.Supply.lines.map({ .&from-json }), :$file).tap: *.say;
+    my Supplier $s .= new;
+    eel($s.Supply.map({ .&from-json }), :$file).tap: *.&to-json(:!pretty).say;
+    lines.map: { $s.emit: $_ }
 }
 
 multi MAIN(Str :e(:eval(:evaluate(:$code)))!) {
-    eel($*IN.Supply.lines.map({ .&from-json }), :$code).tap: *.say;
+    my Supplier $s .= new;
+    eel($s.Supply.map({ .&from-json }), :$code).tap: *.&to-json(:!pretty).say;
+    lines.map: { $s.emit: $_ }
 }

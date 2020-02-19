@@ -2,36 +2,63 @@ use Event::AST;
 use Event::AST::EventDeclaration;
 use Event::AST::EventMatcher;
 use Event::AST::Condition;
+use Event::AST::LocalVar;
 use Event::AST::Group;
 use Event::AST::Infix;
 use Event::AST::Value;
 unit class EventTranslator;
 
 multi method translate(Event::AST @ast --> Array()) {
-    say $?LINE;
-    dd @ast;
+#    say $?LINE;
+#    dd @ast;
     @ = @ast.map: { self.translate: $_ }
 }
 
+multi method translate(Event::AST::LocalVar $ast) {
+    -> %state {
+#        dd [:%state, :$ast];
+        my $root = %state{ $ast.var-id };
+        for $ast.path -> $next {
+            $root = $root{ $next } // Nil
+        }
+        $root<>
+    }
+}
+
 multi method translate(%attrs) {
-    say $?LINE;
+#    say $?LINE;
+    my %attrs-callable = %attrs.kv.map: -> $key, $value {
+        $key => self.translate: $value
+    }
     %(
         :cmd<dispatch>,
-        :data(-> %state { %() })
+        :data(-> %state {
+            %attrs-callable.kv.map(-> $key, $value {
+                $key => do given $value {
+                    when Callable {
+                        .(%state)
+                    }
+                    default {
+                        .self
+                    }
+                }
+            }).Hash
+        })
     )
 }
 
 multi method translate(Event::AST::EventDeclaration $_ where not .body) {
-    say $?LINE;
+#    say $?LINE;
 }
 
-multi method translate(Event::AST::EventDeclaration $_ --> Hash()) {
-    say $?LINE;
-    self.translate: .body, (self.translate: $_ with .attrs)
+multi method translate(Event::AST::EventDeclaration $ast --> Hash()) {
+#    say $?LINE;
+    my %*store = $ast.store;
+    self.translate: $ast.body, (self.translate: %( :type(ast $ast.name), |$_ ) with $ast.attrs)
 }
 
 multi method translate([Event::AST::EventMatcher $_, *@next ($)], %disp?) {
-    say $?LINE;
+#    say $?LINE;
     %(
         |self.translate($_),
         :next(self.translate: @next, %disp)
@@ -41,11 +68,11 @@ multi method translate([Event::AST::EventMatcher $_, *@next ($)], %disp?) {
 multi method translate([Event::AST::EventMatcher $_], %disp?) { self.translate: $_, %disp }
 
 multi method translate(Event::AST::EventMatcher $_, %next?) {
-    say $?LINE;
+#    say $?LINE;
     %(
         :cmd<query>,
         |(:id($_) with .id),
-        :store,
+        |(:store($_) with %*store{ .id }),
         |(
             :query(%(
                 |(:type("==" => $_) with .name),
@@ -59,18 +86,18 @@ multi method translate(Event::AST::EventMatcher $_, %next?) {
 multi method translate([]) {}
 
 multi method translate(Event::AST::Condition $_) {
-    say $?LINE;
+#    say $?LINE;
     .var => (.op => self.translate: .value)
 }
 
 multi method translate(Event::AST::Value $_) {
-    say $?LINE;
+#    say $?LINE;
     .&ast-value
 }
 
 multi method translate(Event::AST:D $_) {
-    say $?LINE;
-    .&dd;
+#    say $?LINE;
+#    .&dd;
     {
         cmd      => "query",
         query    => %(
