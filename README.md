@@ -66,9 +66,8 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
       has $humidity    = #hum.value;
       match {
           [
-              temperature(#temp, value > 40, ?area == #hum.area )
-              &
-              humidity(#hum, value < 20, ?area == #temp.area)
+              & temperature(#temp, value > 40, ?area == #hum.area )
+              & humidity(#hum, value < 20, ?area == #temp.area)
           ] 5min
       }
   }
