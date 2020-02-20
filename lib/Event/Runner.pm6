@@ -8,7 +8,7 @@ has Supply       $.output;
 
 multi method exec($_ (:$cmd where "query", |), %state = {}) {
 #    say "exec add: ", .<query>, %state;
-    $!storage.add: .<query>, %( :id(.<id>), :store(.<store> // []), :next(.<next>), :%state )
+    $!storage.add: .<query>.clone, %( :id(.<id>), :store(.<store> // []), :next(.<next>), :%state.clone )
 }
 
 multi method exec($_ (:$cmd where "dispatch", |), %state = {}) {
@@ -30,17 +30,18 @@ method run() {
             my %event = self.init-event: %pre-event;
             my @data = $!storage.search: %event;
             for @data {
-                my %state      = .<state><> // %();
-                %state{.<id>}  = %event{|.<store>}:p.Hash if .<id>:exists and .<store>.elems;
-                .<next><query> = .<next><query>.kv.map(-> $key, $_ {
+                my %resp           = .clone;
+                my %state          = %resp<state><> // %();
+                %state{%resp<id>}  = %event{|%resp<store>}:p.Hash if %resp<id>:exists and %resp<store>.elems;
+                my %next           = %resp<next>.clone;
+                %next<query>       = %next<query>.clone.kv.map(-> $key, $_ {
                     $key => (
                         .key => .value ~~ Callable
                                 ?? .value.(%state)
                                 !! .value
                         )
                 }).Hash;
-
-                self.exec: .<next>, %state
+                self.exec: %next, %state
             }
         }
     }

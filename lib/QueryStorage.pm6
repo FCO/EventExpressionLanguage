@@ -4,6 +4,7 @@ unit class QueryStorage;
 has QueryStorage::Branch %.branches{Str};
 
 multi method add(%tests, \value) {
+#    say "ADD: %tests.gist(), { value.gist }";
     my %branches := %!branches;
     my $value;
     # TODO: Fix, do not override.

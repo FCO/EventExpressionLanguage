@@ -10,3 +10,5 @@ multi ast-value($_)                   { .self         }
 proto ast($ --> Event::AST) is export   { *                              }
 multi ast(Event::AST $_ --> Event::AST) { .self                          }
 multi ast($value --> Event::AST)        { Event::AST::Value.new: :$value }
+
+multi method gist(::?CLASS:D:) { $!value.gist }

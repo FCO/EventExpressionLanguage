@@ -43,7 +43,7 @@ multi method translate(Event::AST::LocalVar $ast) {
         for $ast.path -> $next {
             $root = $root{ $next } // Nil
         }
-        $root<>
+        $root
     }
 }
 
@@ -73,6 +73,7 @@ multi method translate(Event::AST::EventDeclaration $_ where not .body) {
 }
 
 multi method translate(Event::AST::EventDeclaration $ast) {
+    my Bool $*first = True;
     my %*store = $ast.store;
     self.translate: [
         |$ast.body,
@@ -81,14 +82,16 @@ multi method translate(Event::AST::EventDeclaration $ast) {
 }
 
 multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
+    my Event::AST::Condition @conds = Array[Event::AST::Condition].new: $ast.conds;
+    @conds .= grep: { not .opt } if $*first--;
     %(
         :cmd<query>,
         |(:id($_) with $ast.id),
-        |(:store($_) with %*store{ $ast.id }),
+        |(:store($_) with %*store{ $ast.id }.?unique),
         |(
             :query(%(
                 |(:type("==" => $_) with $ast.name),
-                |$ast.conds.map({ self.translate: $_ })
+                |@conds.map({ self.translate: $_ })
             )) if $ast.conds
         ),
         :%next,
@@ -97,20 +100,35 @@ multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
 
 multi method translate([Event::AST::Infix $ast where .op eq "&", *@next]) {
     my %store := %*store;
+    my $first := $*first;
     $ast.values.permutations.map: {
-        my %*store = %store;
+        my %*store := %store;
+        my $*first = $first;
         self.translate: [|$_, |@next]
     }
 }
 
+multi method translate([Event::AST::Group $ast, *@next]) {
+    # TODO: apply modifier
+    my Bool $*first = True;
+    self.translate: [ |$ast.body, |@next ]
+}
+
 multi method translate([Event::AST::Matcher $ast, *@next]) {
+    my %store := %*store;
+    my $first = $*first;
+    $*first--;
     do given self.translate: @next {
         when Positional | Sequence {
             .self.map: {
+                my %*store := %store;
+                my $*first := $first;
                 self.prepare-event-matcher: $ast, $_
             }
         }
         default {
+            my %*store := %store;
+            my $*first := $first;
             self.prepare-event-matcher: $ast, $_
         }
     }
