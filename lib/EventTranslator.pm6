@@ -10,11 +10,28 @@ use Event::AST::Value;
 
 unit class EventTranslator;
 
+#proto method translate(\data) {
+#    say "Input: ";
+#    dd data;
+#    my \ret = {*};
+#    say "Return: ";
+#    dd [ :data(data), :ret(ret) ];
+#    say "-" x 30;
+#    ret
+#}
+
 multi method translate(Event::AST @ast --> Array()) {
     my @rules;
     for @ast {
-        for self.translate: $_ -> %rule {
-            @rules.push: %rule
+        given self.translate: $_ {
+            when Positional | Sequence {
+                for .self -> %rule {
+                    @rules.push: %rule
+                }
+            }
+            default {
+                @rules.push: .self
+            }
         }
     }
     @rules
@@ -22,7 +39,6 @@ multi method translate(Event::AST @ast --> Array()) {
 
 multi method translate(Event::AST::LocalVar $ast) {
     -> %state {
-#        dd [:%state, :$ast];
         my $root = %state{ $ast.var-id };
         for $ast.path -> $next {
             $root = $root{ $next } // Nil
@@ -32,7 +48,6 @@ multi method translate(Event::AST::LocalVar $ast) {
 }
 
 multi method translate(%attrs) {
-#    say $?LINE;
     my %attrs-callable = %attrs.kv.map: -> $key, $value {
         $key => self.translate: $value
     }
@@ -54,12 +69,10 @@ multi method translate(%attrs) {
 }
 
 multi method translate(Event::AST::EventDeclaration $_ where not .body) {
-#    say $?LINE;
     Empty
 }
 
 multi method translate(Event::AST::EventDeclaration $ast) {
-#    say $?LINE;
     my %*store = $ast.store;
     self.translate: [
         |$ast.body,
@@ -68,7 +81,6 @@ multi method translate(Event::AST::EventDeclaration $ast) {
 }
 
 multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
-#    dd %*store;
     %(
         :cmd<query>,
         |(:id($_) with $ast.id),
@@ -92,9 +104,8 @@ multi method translate([Event::AST::Infix $ast where .op eq "&", *@next]) {
 }
 
 multi method translate([Event::AST::Matcher $ast, *@next]) {
-#    say $?LINE;
     do given self.translate: @next {
-        when Positional {
+        when Positional | Sequence {
             .self.map: {
                 self.prepare-event-matcher: $ast, $_
             }
@@ -110,11 +121,9 @@ multi method translate([%next]) { self.translate: %next }
 multi method translate([]) {}
 
 multi method translate(Event::AST::Condition $_) {
-#    say $?LINE;
     .var => (.op => self.translate: .value)
 }
 
 multi method translate(Event::AST::Value $_) {
-#    say $?LINE;
     .&ast-value
 }
