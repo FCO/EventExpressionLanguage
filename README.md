@@ -5,28 +5,30 @@
 ```
 $ raku -MJSON::Fast -e '
 loop {
-  say to-json :!pretty, %(:type<bla>, :a(^100 .pick))
+  say to-json :!pretty, %(:type<bla>, :a(^100 .pick), :b(^100 .pick))
 }
-' | bin/eel -e='
+' | bin/eel -l=events2.log -e='
   event ble {
     has $a1 = #1.a;
     has $a2 = #2.a;
-    match {
-      bla(#1, a == 42)
-      bla(#2, a == 13)
-    }
+    has $b1 = #1.b;
+    has $b2 = #2.b;
+    match {[
+      & bla(#1, a == 42, ?b == #2.b)
+      & bla(#2, a == 13, ?b == #1.b)
+    ]}
   }
 '
-
-{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.055072Z","a2":13}
-{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.110054Z","a2":13}
-{"a1":42,"type":"ble","timestamp":"2020-02-19T14:40:15.218650Z","a2":13}
-{"a1":42,"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.259750Z"}
-{"a1":42,"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.300648Z"}
-{"timestamp":"2020-02-19T14:40:15.325864Z","type":"ble","a2":13,"a1":42}
-{"timestamp":"2020-02-19T14:40:15.357166Z","type":"ble","a2":13,"a1":42}
-{"a2":13,"type":"ble","timestamp":"2020-02-19T14:40:15.371284Z","a1":42}
-{"timestamp":"2020-02-19T14:40:15.415902Z","type":"ble","a2":13,"a1":42}
+{"a1":42,"a2":13,"b1":22,"b2":22,"timestamp":"2020-02-20T04:19:47.178670Z","type":"ble"}
+{"timestamp":"2020-02-20T04:19:47.515712Z","type":"ble","b2":43,"b1":43,"a2":13,"a1":42}
+{"b2":45,"type":"ble","timestamp":"2020-02-20T04:19:51.563406Z","a1":42,"a2":13,"b1":45}
+{"b2":99,"type":"ble","timestamp":"2020-02-20T04:19:52.089484Z","a1":42,"a2":13,"b1":99}
+{"b2":19,"type":"ble","timestamp":"2020-02-20T04:19:54.037338Z","a2":13,"a1":42,"b1":19}
+{"b2":10,"type":"ble","timestamp":"2020-02-20T04:19:55.338196Z","a2":13,"a1":42,"b1":10}
+{"b2":81,"timestamp":"2020-02-20T04:19:55.971652Z","type":"ble","a2":13,"a1":42,"b1":81}
+{"b2":49,"timestamp":"2020-02-20T04:20:04.710167Z","type":"ble","a1":42,"a2":13,"b1":49}
+{"a1":42,"a2":13,"b1":52,"b2":52,"timestamp":"2020-02-20T04:20:05.310459Z","type":"ble"}
+{"b2":49,"timestamp":"2020-02-20T04:20:06.304376Z","type":"ble","a1":42,"a2":13,"b1":49}
 ^C
 ```
 
@@ -44,7 +46,7 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
   | [ A ]                                                                          | group                                                                                                          |
   | A & B                                                                          | A AND B in any order                                                                                           |
   | A && B                                                                         | A AND B on that order                                                                                          |
-  | A \| B                                                                         | A XOR B                                                                                                        |
+  | A \| B                                                                         | A OR B                                                                                                         |
   | bla()                                                                          | matches an event called `bla`                                                                                  |
   | bla( value > 3 )                                                               | matches an event called `bla` where value is greater than 3                                                    |
   | $ble                                                                           | event propert called ble                                                                                       |
@@ -64,9 +66,8 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
       has $humidity    = #hum.value;
       match {
           [
-              temperature(#temp, value > 40, ?area == #hum.area )
-              &
-              humidity(#hum, value < 20, ?area == #temp.area)
+              & temperature(#temp, value > 40, ?area == #hum.area )
+              & humidity(#hum, value < 20, ?area == #temp.area)
           ] 5min
       }
   }
