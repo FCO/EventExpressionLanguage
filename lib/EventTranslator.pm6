@@ -1,4 +1,5 @@
 use Event::AST;
+use Event::AST::QuantifierMatcher;
 use Event::AST::EventDeclaration;
 use Event::AST::EventMatcher;
 use Event::AST::Condition;
@@ -87,7 +88,7 @@ multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
     %(
         :cmd<query>,
         |(:id($_) with $ast.id),
-        |(:store($_) with %*store{ $ast.id }.?unique),
+        |(:store($_) with %*store{ $ast.id // "" }.?unique),
         |(
             :query(%(
                 |@conds.map({ self.translate: $_ }),
@@ -106,6 +107,13 @@ multi method translate([Event::AST::Infix $ast where .op eq "&", *@next]) {
         my $*first = $first;
         self.translate: [|$_, |@next]
     }
+}
+
+multi method translate([Event::AST::QuantifierMatcher $ast where .min == .max, *@next]) {
+    my %store := %*store;
+    my $first := $*first;
+    return self.translate: @next if $ast.min == 0;
+    self.translate: [ $ast.matcher, $ast.clone(:min($ast.min - 1), :max($ast.max - 1)), |@next ]
 }
 
 multi method translate([Event::AST::Group $ast, *@next]) {

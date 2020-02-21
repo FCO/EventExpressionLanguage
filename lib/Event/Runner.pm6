@@ -12,7 +12,7 @@ multi method exec($_ (:$cmd where "query", |), %state = {}) {
 }
 
 multi method exec($_ (:$cmd where "dispatch", |), %state = {}) {
-    emit self.init-event: .<data>.(%state).Hash
+    emit self.init-event: %( .<data>.(%state) )
 }
 
 multi method exec(|c) { die "unrecognised: { c.perl }" }
@@ -22,10 +22,10 @@ multi method init-event(%event (:$timestamp where *.defined, |)) { %event }
 multi method init-event(%event) { %( |%event, :timestamp(now) )  }
 
 method run() {
-    for @!rules -> %cmd {
-        self.exec: %cmd
-    }
     $!output = supply {
+        for @!rules -> %cmd {
+            self.exec: %cmd
+        }
         whenever $!input -> %pre-event {
             my %event = self.init-event: %pre-event;
             my @data = $!storage.search: %event;

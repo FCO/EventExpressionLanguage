@@ -62,7 +62,7 @@ method time-unit:sym<d>($/)   { make 24 * 60 * 60 }
 method time-mod($/) { make $<val> * $<time-unit>.made }
 
 method statement-time-mod($/) {
-    make $<statement>.made
+    make $<statement-qtt>.made
 }
 
 method statement:sym<event-match>($/) {
@@ -84,16 +84,20 @@ method counter:sym<min>($/)   {
     make (+$0) .. Inf
 }
 
+method statement-qtt:sym<1>($/)  {
+    make $<statement>.made
+}
+method statement-qtt:sym<**>($/) {
+    make Event::AST::QuantifierMatcher.new:
+        :matcher($<statement>.made),
+        :min($<counter>.made.min),
+        :max($<counter>.made.max),
+    ;
+}
+
 method statement:sym<&>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
 method statement:sym<&&>($/) { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
 method statement:sym<|>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
-
-method statement:sym<**>($/) {
-    make Event::AST::QuantifierMatcher.new:
-        :matcher($<event-match>.made),
-        :min($<counter>.made.min),
-        :max($<counter>.made.max),
-}
 
 method statement:sym<group>($/) {
     make Event::AST::Group.new: :body($<statement>>>.made)

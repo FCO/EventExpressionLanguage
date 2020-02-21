@@ -81,7 +81,7 @@ token time-mod {
 }
 
 rule statement-time-mod {
-    <statement> <time-mod>?
+    <statement-qtt> <time-mod>?
 }
 
 proto rule counter      { * }
@@ -89,22 +89,23 @@ rule counter:sym<one>   { \d+ }
 rule counter:sym<range> { (\d+) ".." (\d+) }
 rule counter:sym<min>   { (\d+) ".." "*" }
 
+proto rule statement-qtt   { * }
+rule statement-qtt:sym<**> { <statement> <sym> <counter> { self.register-id: $<statement> } }
+rule statement-qtt:sym<1>  { <statement>  { self.register-id: $<statement> } }
+
 proto rule statement   { *                              }
 rule statement:sym<&>  {
     <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> }
 }
-rule statement:sym<&&> { <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> } }
-rule statement:sym<|>  { <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> } }
-
-rule statement:sym<**> { <event-match> <sym> <counter>  { self.register-id: $<event-match> } }
+rule statement:sym<&&> { <sym>? <event-match>+ %% <sym> }
+rule statement:sym<|>  { <sym>? <event-match>+ %% <sym> }
 
 rule statement:sym<event-match> {
-    <event-match> { self.register-id: $<event-match> }
+    <event-match>
 }
 rule statement:sym<group> {
     :my %*local-vars := SetHash.new;
     '[' ~ ']' <statement>*
-    { self.register-id: $<statement><event-match> }
 }
 #rule statement:sym<infix> {
 #    <event-match> <st-infix-op> <statement>
@@ -117,7 +118,7 @@ rule event-match {
 
 method register-id(*@events) {
     for @events -> $/ {
-        my $id = $<event-match-content><local-var>;
+        my $id = $<event-match><event-match-content><local-var>;
         next without $id;
         if %*local-vars{$id}:exists {
             self.parse-error: $<local-var>, "Id '{$id}' already in use";
