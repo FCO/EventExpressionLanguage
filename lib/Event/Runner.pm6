@@ -32,7 +32,12 @@ method run() {
             for @data {
                 my %resp           = .clone;
                 my %state          = %resp<state><> // %();
-                %state{%resp<id>}  = %event{|%resp<store>}:p.Hash if %resp<id>:exists and %resp<store>.elems;
+                with %resp<id> {
+                    my @store = %resp<store>.grep: { .defined } if %resp<store>;
+                    if @store {
+                        %state{$_} = %(%event{@store}:p) if %event{@store}:exists
+                    }
+                }
                 my %next           = %resp<next>.clone;
                 %next<query>       = %next<query>.clone.kv.map(-> $key, $_ {
                     $key => (

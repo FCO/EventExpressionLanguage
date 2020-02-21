@@ -84,17 +84,27 @@ rule statement-time-mod {
     <statement> <time-mod>?
 }
 
-proto rule statement {*}
-rule statement:sym<&>  { <sym>? <event-match>+ %% <sym> }
-rule statement:sym<&&> { <sym>? <event-match>+ %% <sym> }
-rule statement:sym<|>  { <sym>? <event-match>+ %% <sym> }
+proto rule counter      { * }
+rule counter:sym<one>   { \d+ }
+rule counter:sym<range> { (\d+) ".." (\d+) }
+rule counter:sym<min>   { (\d+) ".." "*" }
+
+proto rule statement   { *                              }
+rule statement:sym<&>  {
+    <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> }
+}
+rule statement:sym<&&> { <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> } }
+rule statement:sym<|>  { <sym>? <event-match>+ %% <sym> { self.register-id: $<event-match> } }
+
+rule statement:sym<**> { <event-match> <sym> <counter>  { self.register-id: $<event-match> } }
 
 rule statement:sym<event-match> {
-    <event-match>
+    <event-match> { self.register-id: $<event-match> }
 }
 rule statement:sym<group> {
     :my %*local-vars := SetHash.new;
     '[' ~ ']' <statement>*
+    { self.register-id: $<statement><event-match> }
 }
 #rule statement:sym<infix> {
 #    <event-match> <st-infix-op> <statement>
@@ -105,16 +115,20 @@ rule event-match {
     <name> "(" ~ ")" <event-match-content>* %% [<.ws> ',' <.ws>]
 }
 
+method register-id(*@events) {
+    for @events -> $/ {
+        my $id = $<event-match-content><local-var>;
+        next without $id;
+        if %*local-vars{$id}:exists {
+            self.parse-error: $<local-var>, "Id '{$id}' already in use";
+        }
+        %*local-vars{$id}++
+    }
+}
+
 proto rule event-match-content {*}
 token event-match-content:sym<id> {
     <local-var>
-    {
-        $*id = ~$<local-var>;
-        if %*local-vars{$*id}:exists {
-            self.parse-error: $<local-var>, "Id '{$*id}' already in use";
-        }
-        %*local-vars{$*id}++
-    }
 }
 rule event-match-content:sym<condition> {
     <name> <op> <lval>

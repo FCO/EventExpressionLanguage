@@ -90,9 +90,9 @@ multi method prepare-event-matcher(Event::AST::EventMatcher $ast, %next) {
         |(:store($_) with %*store{ $ast.id }.?unique),
         |(
             :query(%(
+                |@conds.map({ self.translate: $_ }),
                 |(:type("==" => $_) with $ast.name),
-                |@conds.map({ self.translate: $_ })
-            )) if $ast.conds
+            ))
         ),
         :%next,
     )

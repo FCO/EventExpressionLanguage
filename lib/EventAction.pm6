@@ -1,3 +1,4 @@
+use Event::AST::QuantifierMatcher;
 use Event::AST::EventDeclaration;
 use Event::AST::EventMatcher;
 use Event::AST::Condition;
@@ -72,9 +73,27 @@ method infix(:$op, :@values) {
         :@values,
         :$op
 }
+
+method counter:sym<one>($/)   {
+    make +$/
+}
+method counter:sym<range>($/) {
+    make (+$0) .. (+$1)
+}
+method counter:sym<min>($/)   {
+    make (+$0) .. Inf
+}
+
 method statement:sym<&>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
 method statement:sym<&&>($/) { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
 method statement:sym<|>($/)  { make self.infix: :op(~$<sym>.head), :values($<event-match>>>.made) }
+
+method statement:sym<**>($/) {
+    make Event::AST::QuantifierMatcher.new:
+        :matcher($<event-match>.made),
+        :min($<counter>.made.min),
+        :max($<counter>.made.max),
+}
 
 method statement:sym<group>($/) {
     make Event::AST::Group.new: :body($<statement>>>.made)
