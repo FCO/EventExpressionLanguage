@@ -47,6 +47,7 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
   | A & B                                                                          | A AND B in any order                                                                                           |
   | A && B                                                                         | A AND B on that order                                                                                          |
   | A \| B                                                                         | A OR B                                                                                                         |
+  | ** N                                                                           | indicates that the last matcher should be matched N times                                                      |
   | bla()                                                                          | matches an event called `bla`                                                                                  |
   | bla( value > 3 )                                                               | matches an event called `bla` where value is greater than 3                                                    |
   | $ble                                                                           | event propert called ble                                                                                       |
