@@ -7,7 +7,7 @@ use JSON::Fast;
 
 subset File of Str where .IO.f;
 
-multi MAIN(File $file, :l(:$log) is copy) {
+multi MAIN(File $file, :l(:$log) is copy, Bool :d(:debug($*DEBUG))) {
     with $log {
         $log .= IO
     } else {
@@ -25,7 +25,7 @@ multi MAIN(File $file, :l(:$log) is copy) {
     $log.lines.map: { $s.emit: $_ }
 }
 
-multi MAIN(Str :e(:eval(:evaluate(:$code)))!, :l(:$log) is copy) {
+multi MAIN(Str :e(:eval(:evaluate(:$code)))!, :l(:$log) is copy, Bool :d(:debug($*DEBUG))) {
     with $log {
         $log .= IO
     } else {

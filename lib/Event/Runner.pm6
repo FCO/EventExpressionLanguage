@@ -21,9 +21,28 @@ proto method init-event(% --> Hash()) {*}
 multi method init-event(%event (:$timestamp where *.defined, |)) { %event }
 multi method init-event(%event) { %( |%event, :timestamp(now) )  }
 
+sub dump-rule(%rule) {
+    do given %rule<cmd> {
+        when "dispatch" {
+            "DISPATCH: { %rule.gist }"
+        }
+        when "query" {
+            (
+                %rule<query>.gist,
+                dump-rule(%rule<next>).indent: 4
+            ).join: "\n"
+        }
+        default {
+            quietly die "unrecognized rule cmd ({ %rule<cmd> }): ", %rule
+        }
+    }
+}
+
 method run() {
     $!output = supply {
         for @!rules -> %cmd {
+#            dd %cmd;
+            say dump-rule(%cmd) if $*DEBUG;
             self.exec: %cmd
         }
         whenever $!input -> %pre-event {

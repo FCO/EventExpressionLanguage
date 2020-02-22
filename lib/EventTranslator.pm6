@@ -109,14 +109,21 @@ multi method translate([Event::AST::Infix $ast where .op eq "&", *@next]) {
     }
 }
 
-multi method translate([Event::AST::QuantifierMatcher $ast where .min == .max, *@next]) {
-    return self.translate: @next if $ast.min == 0;
-    self.translate: [ $ast.matcher, $ast.clone(:min($ast.min - 1), :max($ast.max - 1)), |@next ]
+multi method translate([Event::AST::QuantifierMatcher $ast  , *@next]) {
+    my @rules;
+    my $first = $*first;
+
+    for $ast.min .. $ast.max {
+        my $*first = $first;
+        @rules.push: self.translate: [
+            |($ast.matcher xx $_),
+            |@next
+        ];
+    }
+    @rules
 }
 
 multi method translate([Event::AST::Group $ast, *@next]) {
-    # TODO: apply modifier
-#    my Bool $*first = True;
     self.translate: [ |$ast.body, |@next ]
 }
 

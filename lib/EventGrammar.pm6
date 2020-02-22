@@ -85,9 +85,9 @@ rule statement-time-mod {
 }
 
 proto rule counter      { * }
-rule counter:sym<one>   { \d+ }
 rule counter:sym<range> { (\d+) ".." (\d+) }
 rule counter:sym<min>   { (\d+) ".." "*" }
+rule counter:sym<one>   { \d+ }
 
 proto rule statement-qtt   { * }
 rule statement-qtt:sym<**> { <statement> <sym> <counter> { self.register-id: $<statement> } }
