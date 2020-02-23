@@ -3,7 +3,9 @@ use QueryStorage::BTree::Node;
 unit class QueryStorage::BTree does QueryStorage::List;
 
 method op { !!! }
-multi method func($, $ --> False) {!!!}
+multi method func($, $) {!!!}
+multi method func($ where not .defined, $ --> False) {}
+multi method func($, $ where not .defined --> False) {}
 multi method func(Nil, $ --> False) {}
 multi method func($, Nil --> False) {}
 

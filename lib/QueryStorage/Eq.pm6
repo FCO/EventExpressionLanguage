@@ -7,6 +7,8 @@ multi method add($test, \value) {
     %!eq{ $test } = value;
     self
 }
-method search($val) {
+multi method search($val where .defined) {
     gather { .take with %!eq{$val} }
 }
+
+multi method search($) { Empty }
