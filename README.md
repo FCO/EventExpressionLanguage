@@ -121,6 +121,9 @@ Usage:
   bin/eel -e|--eval|--evaluate|--code=<Str> [-l|--log=<Any>] [-d|--debug]
 ```
 
+It accepts some EEL code (by file or by -e flag) and reads STDIN line by line for JSON object.
+And prints back all recognized patterns.
+
 ## How it work
   
 - runner:
