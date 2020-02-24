@@ -112,6 +112,16 @@ It's an idea of a solution for complex event processing, it's divided into 3 mai
       }
   ;
   ```
+
+## eel
+
+```
+Usage:
+  bin/eel [-l|--log=<Any>] [-d|--debug] <file>
+  bin/eel -e|--eval|--evaluate|--code=<Str> [-l|--log=<Any>] [-d|--debug]
+```
+
+## How it work
   
 - runner:
   
