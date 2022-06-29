@@ -29,27 +29,27 @@ event Login {
   }
 
   pattern login-page {
-    <req=.Request> <{ $<req>.path eq "/login" }>
+    <req=.Request> <?{ $<req>.path eq "/login" }>
   }
 
   pattern login-form {
     <page=.login-page>
-    <{ $<page>.method eq "GET" && $<page>.status == 200 }>
+    <?{ $<page>.method eq "GET" && $<page>.status == 200 }>
   }
 
   pattern login-action(UUID() $form-id) {
     <page=.login-page>
-    <{ $<page>.method eq "POST" && $<page>.form-id eq $form-id }>
+    <?{ $<page>.method eq "POST" && $<page>.form-id eq $form-id }>
   }
 
   pattern login-action-fail(UUID() $form-id) {
     <action=.login-action($form-id)>
-    <{ $<action>.status div 100 != 2 }>
+    <?{ $<action>.status div 100 != 2 }>
   }
 
   pattern login-action-success(UUID() $form-id) {
     <action=.login-action($form-id)>
-    <{ $<action>.status div 100 == 2 }>
+    <?{ $<action>.status div 100 == 2 }>
   }
 }
 
