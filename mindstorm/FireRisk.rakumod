@@ -13,7 +13,7 @@ event FireRisk {
   pattern TOP {
     [
       <hot> & <dry>
-      <{ $<hot>.area == $<dry>.area }>
+      <?{ $<hot>.area == $<dry>.area }>
       { $!area = $<hot>.area }
     ] in 5min
     { $!temperature = $<hot>.value }
@@ -21,10 +21,10 @@ event FireRisk {
   }
 
   pattern hot {
-    <Temperature> { $<Temperature>.value > 40 }
+    <Temperature> <?{ $<Temperature>.value > 40 }>
   }
 
   pattern dry {
-    <Humidity>    { $<Humidity>.value < 20 }
+    <Humidity>    <?{ $<Humidity>.value < 20 }>
   }
 }
