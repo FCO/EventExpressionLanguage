@@ -12,7 +12,7 @@ event FireRisk {
 
   pattern TOP {
     [
-      <hot> & <dry>
+      [ <hot> & <dry> ]
       <?{ $<hot>.area == $<dry>.area }>
       { $!area = $<hot>.area }
     ] in 5min
