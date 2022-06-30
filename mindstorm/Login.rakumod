@@ -6,7 +6,7 @@ event Request is generic-log-entry(&line-to-hash) {
   has Str      $.method;
   has UInt     $.status;
   has Str      $.path;
-  has UUID()   $.form-id;
+  has          %.data;
   has DateTime $.timestamp;
   has Str()    %.headers
 }
@@ -19,7 +19,7 @@ event Login {
 
   pattern TOP {
     <get=.login-form>
-    :my $form-id = $<login-form>.form-id;
+    :my $form-id = $<login-form>.data<form-id>;
     <failures=.login-action-fail($form-id)>*
     <success=.login-action-success($form-id)>
     { $!session-id = $<success>.headers<session-id> }
@@ -39,7 +39,7 @@ event Login {
 
   pattern login-action(UUID() $form-id) {
     <page=.login-page>
-    <?{ $<page>.method eq "POST" && $<page>.form-id eq $form-id }>
+    <?{ $<page>.method eq "POST" && $<page>.data<form-id> eq $form-id }>
   }
 
   pattern login-action-fail(UUID() $form-id) {
