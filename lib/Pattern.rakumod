@@ -1,4 +1,4 @@
-my class Step is Callable {
+my class Step {
     has Numeric  $.min = 1;
     has Numeric  $.max = 1;
     has Callable @.steps;
@@ -15,7 +15,30 @@ my class Step is Callable {
     }
 }
 
-class Pattern is Step is Method {
-    has Str $.source;
+my class Or {
+    has Callable @.options;
 
+    multi method add-option(&opt) {
+        @!options.push: &opt
+    }
+
+    multi method add-option(@opts) {
+        @!options.push: $_ for @opts
+    }
+
+    method CALL-ME(\match, |c) {
+        # FIXME: what happens if there is no rule as first step?
+        for @!options {
+            .(match, |c)
+        }
+    }
+}
+
+class Pattern is Method {
+    has Str  $.source;
+    has Step $.steps handles <add-step> .= new;
+
+    method CALL-ME(\match, |c) {
+        $!steps(match, |c)
+    }
 }
