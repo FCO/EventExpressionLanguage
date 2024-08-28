@@ -1,30 +1,22 @@
 ########################
 # Emits a FireRisk event if its too hot and too dry on a given area
 ########################
-
-event Temperature is generic-hash-event { has Int $.area; has Rat $.value }
-event Humidity    is generic-hash-event { has Int $.area; has Rat $.value }
+use lib 'lib';
+use EEL;
 
 event FireRisk {
-  has Int $.area;
-  has Rat $.temparature;
-  has Rat $.humidity;
-
   pattern TOP {
     [
-      [ <hot> & <dry> ]
-      <?{ $<hot>.area == $<dry>.area }>
-      { $!area = $<hot>.area }
-    ] in 5min
-    { $!temperature = $<hot>.value }
-    { $!humidity    = $<dry>.value }
+      | <hot> <dry($<hot><event><area>)>
+      | <dry> <hot($<dry><event><area>)>
+    ] 5min
   }
 
-  pattern hot {
-    <Temperature> <?{ $<Temperature>.value > 40 }>
+  pattern hot($area) {
+    <event(|(:$area with $area), :type<temperature>, :value{'>' => 40 })>
   }
 
-  pattern dry {
-    <Humidity>    <?{ $<Humidity>.value < 20 }>
+  pattern dry($area) {
+    <event(|(:$area with $area), :type<humidity>, :value{'<' => 20 })>
   }
 }

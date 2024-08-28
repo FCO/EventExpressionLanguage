@@ -10,7 +10,8 @@ multi method add(%tests, \value) {
     # TODO: Fix, do not override.
     for %tests.pairs.sort.kv -> UInt $i, (:$key, :value($test)) {
         $value = $i + 1 == %tests ?? value !! ::?CLASS.new;
-        %branches{$key} .= add: $test, $value;
+        note "($key).add: $test.gist(), $value";
+        %branches{$key} .= add: $test<>, $value;
         %branches := $value.branches if $value ~~ ::?CLASS
     }
     self
