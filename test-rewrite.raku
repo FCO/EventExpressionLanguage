@@ -12,4 +12,8 @@ event Bla {
     }
 }
 
-say await Bla.parse($supplier.Supply)
+react {
+    whenever Bla.parse($supplier.Supply) -> $event {
+        say '-' x 30, "> $event.gist()"
+    }
+}
