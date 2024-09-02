@@ -125,6 +125,13 @@ my class Step does Nextable {
         self
     }
 
+    method add-sub(&func) {
+        $.add-step: sub ($/) {
+            func $/;
+            HandledReturn::Next
+        }
+    }
+
     method add-rule-call(Str $rule-to-call, Capture $args, Bool :$store-positional = False, Str :$store-key) {
         $.add-step: sub call-rule($match) {
             HandledReturn::CallRule.new: :$rule-to-call, :$args
@@ -195,7 +202,7 @@ my class Repeat does Nextable {
 class Pattern is Method {
     has Str  $.name;
     has Str  $.source;
-    has Step $.steps handles <add-step add-rule-call list-steps> .= bless;
+    has Step $.steps handles <add-step add-rule-call add-sub list-steps> .= bless;
 
     method choose-callable(|c) {
         $!steps.choose-callable: |c

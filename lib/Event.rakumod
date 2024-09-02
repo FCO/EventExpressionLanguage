@@ -7,8 +7,8 @@ has Event        $.parent;
 has Str          $.rule     = 'TOP';
 has              @.pos;
 has UInt         $.index    = 0;
-has              $.received-event;
-has QueryStorage $.storage = $storage;
+has              $.data;
+has QueryStorage $.storage  = $storage;
 has              $.actions;
 has              $.made;
 has Capture      $.args;
@@ -43,7 +43,7 @@ method parse(Supply $supply, Str :$rule = "TOP", |args) {
   supply {
     whenever $supply -> $event {
       for $storage.search: $event -> \match {
-        run match.clone: :received-event($event);
+        run match.clone: :data($event);
       }
     }
   }
@@ -76,7 +76,7 @@ $pattern.add-step: sub query-matched ($match, *%pars) {
 
 multi method gist(::?CLASS:D:) {
     [
-        "{$!rule}: ｢" ~ (.gist with $!received-event) ~ '｣' ~ "   # { .subst(/\n/, "␤").subst(/\t/, "␉") with $.^find_method($!rule).?source }",
+        "{$!rule}: ｢" ~ (.gist with $!data) ~ '｣' ~ "   # { .subst(/\n/, "␤").subst(/\t/, "␉") with $.^find_method($!rule).?source }",
         do for |@.list.pairs, |%.hash.pairs.sort -> (:key($i), :value($submatch)) {
              "$i => $submatch.gist()"
         }.join.indent: 4
