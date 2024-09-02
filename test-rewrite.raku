@@ -8,7 +8,7 @@ start {
 }
 event Bla {
     # patterm TOP {
-    #     <test=.event: :type<t1>>
+    #     <test=.event(:type<t1>)>
     # }
 
     use Pattern;
