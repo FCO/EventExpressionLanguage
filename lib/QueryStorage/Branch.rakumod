@@ -9,10 +9,15 @@ has %!map   = |@!types.map: { .op => $_ }
 
 method map($op) { %!map{$op}.new }
 
+#proto method add(|c) {dd c; {*}}
 multi method add(::?CLASS:U: %test, $value) {
     my ::?CLASS $obj .= new;
     $obj.add: %test.pairs.head, $value;
     $obj
+}
+multi method add(::?CLASS:D: %test where * !~~ Pair, $value) {
+    $.add: %test.pairs.head, $value;
+    self
 }
 multi method add(::?CLASS:D: (:$key, :$value), $value2) {
     (%!lists{$key} //= self.map: $key) .= add: $value, $value2;

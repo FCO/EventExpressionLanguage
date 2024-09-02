@@ -64,7 +64,7 @@ my role Nextable is Method {
         $storage.add: %query, $.next-pos-match: match;
     }
     multi method handle-return(\match, HandledReturn::CallRule ( :rule-to-call($rule), :$args, | )) {
-        match.new(:parent(match), :$rule, :$args)."$rule"(|$args.Capture)
+        match.new(:pos[0], :0index, :parent(match), :$rule, :$args)."$rule"(|$args.Capture)
     }
     multi method handle-return(@returns) {
         $.handle-return: $_ for @returns
@@ -79,7 +79,9 @@ my role Nextable is Method {
         my @pos     = match.pos;
         my $index   = match.index;
         my $current = @pos[$index];
-        Array[UInt].new: do if $current + 1 >= $.elems {
+        my $pattern = match.^find_method(match.rule);
+        my $steps   = $pattern.choose-callable(@pos.head: $index).elems;
+        do if $current + 1 >= $steps {
             return Nil if $index == 0;
             @pos.head($index - 1), @pos[$index - 1] + 1
         } else {
@@ -96,8 +98,20 @@ my class Step does Nextable {
         |@!steps
     }
 
-    method choose-callable(UInt $i) {
+    multi method choose-callable(UInt $i) {
         @!steps[$i]
+    }
+
+    multi method choose-callable([]) {
+        self
+    }
+
+    multi method choose-callable([UInt $first]) {
+        $.choose-callable: $first
+    }
+
+    multi method choose-callable([UInt $first, *@rest]) {
+        $.choose-callable($first).choose-callable: @rest
     }
 
     multi method add-step(&callable) {
@@ -182,6 +196,10 @@ class Pattern is Method {
     has Str  $.name;
     has Str  $.source;
     has Step $.steps handles <add-step add-rule-call list-steps> .= bless;
+
+    method choose-callable(|c) {
+        $!steps.choose-callable: |c
+    }
 
     method CALL-ME(\match, |c) {
         my $m = match.clone: :args(c), :rule($.name);

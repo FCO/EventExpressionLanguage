@@ -40,7 +40,6 @@ sub run(\match) {
 
 method parse(Supply $supply, Str :$rule = "TOP", |args) {
   my $match = run self.new: :$rule, :args(args), :pos[0], :0index;
-  say $?LINE;
   supply {
     whenever $supply -> $event {
       for $storage.search: $event -> \match {
@@ -51,7 +50,9 @@ method parse(Supply $supply, Str :$rule = "TOP", |args) {
 }
 
 method clone(*%p) {
-  $.new: |to-map(self), |%p
+  my @list = @.list;
+  my %hash = %.hash;
+  $.new: |to-map(self), :@list, :%hash, |%p
 }
 
 use Pattern;
@@ -75,10 +76,10 @@ $pattern.add-step: sub query-matched ($match, *%pars) {
 
 multi method gist(::?CLASS:D:) {
     [
-        "{$!rule}: ｢" ~ (.gist with $!received-event) ~ '｣' ~ " - ({ .subst(/\n/, "␤").subst(/\t/, "␉") with $.^find_method($!rule).?source })",
-        do for |@.list.kv, |%.hash.kv -> $i, $submatch {
+        "{$!rule}: ｢" ~ (.gist with $!received-event) ~ '｣' ~ "   # { .subst(/\n/, "␤").subst(/\t/, "␉") with $.^find_method($!rule).?source }",
+        do for |@.list.pairs, |%.hash.pairs.sort -> (:key($i), :value($submatch)) {
              "$i => $submatch.gist()"
-        }.indent: 4
+        }.join.indent: 4
     ].join: "\n"
 }
 

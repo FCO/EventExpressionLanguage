@@ -3,6 +3,7 @@ unit class QueryStorage;
 
 has QueryStorage::Branch %.branches{Str};
 
+#proto method add(|c) {dd c; {*}}
 multi method add(%tests, \value) {
 #    say "ADD: %tests.gist(), { value.gist }";
     my %branches := %!branches;
