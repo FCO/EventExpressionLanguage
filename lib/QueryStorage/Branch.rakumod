@@ -9,9 +9,9 @@ has %!map   = |@!types.map: { .op => $_ }
 
 method map($op) { %!map{$op}.new }
 
-multi method add(::?CLASS:U: Pair $test, $value) {
+multi method add(::?CLASS:U: %test, $value) {
     my ::?CLASS $obj .= new;
-    $obj.add: $test, $value;
+    $obj.add: %test.pairs.head, $value;
     $obj
 }
 multi method add(::?CLASS:D: (:$key, :$value), $value2) {
