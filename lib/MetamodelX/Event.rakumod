@@ -1,8 +1,7 @@
 use Event;
 unit class MetamodelX::Event is Metamodel::ClassHOW;
 
-method new_type(|c) {
-  my $type = callsame;
-  $type.^add_parent: Event;
-  $type
+method compose(Mu $type, |options) {
+  $type.^add_parent(Event) unless $type.^parents(:local).grep({ .^isa(Event) }).elems;
+  callsame
 }

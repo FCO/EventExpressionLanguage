@@ -32,7 +32,7 @@
             data     => -> %state --> Hash() { :temperature(%state<#temp>.value), :humidity(%state<#hum>.value) },
         }
     ]
-]
+];
 
 # BEGIN
 $storage.add:
