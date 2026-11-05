@@ -154,11 +154,25 @@ sub unparen($expression) {
     }
     $e
 }
+# Resolve through the AST lookup API available in released Rakudo versions.
+# Only rewrite CORE operations: lexical replacements must keep their semantics.
+sub resolves-to-setting($lookup, Str $name) {
+    return False unless $lookup.is-resolved;
+    my $resolution=$lookup.resolution;
+    return False unless $resolution ~~ RakuAST::CompileTimeValue;
+    return True if $resolution ~~ RakuAST::Declaration::External::Setting
+        && $resolution.lexical-name eq $name;
+    my $resolver := nqp::getlexdyn('$*R');
+    return False if nqp::isnull($resolver) || !nqp::isconcrete($resolver);
+    my $setting := $resolver.resolve-lexical-constant-in-setting($name);
+    so nqp::isconcrete($setting) && $setting ~~ RakuAST::CompileTimeValue
+        && nqp::eqaddr($resolution.compile-time-value, $setting.compile-time-value)
+}
 sub junction-kind($e) {
     if $e ~~ RakuAST::Call::Name && $e.name.canonicalize eq any(<any all one none>)
-        && $e.IMPL-RESOLVES-TO-SETTING('&' ~ $e.name.canonicalize) { return $e.name.canonicalize }
+        && resolves-to-setting($e, '&' ~ $e.name.canonicalize) { return $e.name.canonicalize }
     if $e ~~ RakuAST::ApplyListInfix && $e.infix.operator eq any('|','&','^')
-        && $e.infix.IMPL-RESOLVES-TO-SETTING('&infix:<' ~ $e.infix.operator ~ '>') {
+        && resolves-to-setting($e.infix, '&infix:<' ~ $e.infix.operator ~ '>') {
         return { '|' => 'any', '&' => 'all', '^' => 'one' }{$e.infix.operator};
     }
     ''
@@ -168,11 +182,11 @@ sub junction-children($e) { $e ~~ RakuAST::Call::Name ?? $e.args.args !! $e.oper
 sub comparison-ast($expression) {
     my $e=unparen($expression);
     return Nil unless $e ~~ RakuAST::ApplyInfix && $e.infix.operator eq any('==','!=','<','<=','>','>=');
-    return Nil unless $e.infix.IMPL-RESOLVES-TO-SETTING('&infix:«' ~ $e.infix.operator ~ '»');
+    return Nil unless resolves-to-setting($e.infix, '&infix:«' ~ $e.infix.operator ~ '»');
     my @terms; my @ops;
     sub flatten($node) {
         if $node ~~ RakuAST::ApplyInfix && $node.infix.operator eq any('==','!=','<','<=','>','>=') {
-            return unless $node.infix.IMPL-RESOLVES-TO-SETTING('&infix:«' ~ $node.infix.operator ~ '»');
+            return unless resolves-to-setting($node.infix, '&infix:«' ~ $node.infix.operator ~ '»');
             flatten($node.left); @ops.push($node.infix.operator); @terms.push(unparen($node.right));
         } else { @terms.push(unparen($node)) }
     }

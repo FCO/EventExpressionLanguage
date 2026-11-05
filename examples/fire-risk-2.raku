@@ -1,6 +1,5 @@
 use lib 'lib';
 use EEL;
-use EEL::Absence;
 
 # The positive assertion captures the area without consuming the reading.
 # The same reading can therefore be the first dry/hot event below.
@@ -8,7 +7,7 @@ event FireRisk2 {
     has Str $.area;
     has Int $.temperature;
     has Int $.humidity;
-    has EEL::Absence $.no-rain;
+    has Absence $.no-rain;
 
     pattern rain(*%attrs) { <.event: :type<rain>, |%attrs> }
     pattern TOP {

@@ -1,4 +1,6 @@
 use nqp;
+use experimental :rakuast;
+use MONKEY-SEE-NO-EVAL;
 use JSON::Fast;
 use EEL;
 use EEL::Metadata;
@@ -96,7 +98,7 @@ sub encode-event($value, %active = {}, Str $where = '$') is export {
 }
 
 sub run-cli(@arguments, :$stdout! --> Int) is export {
-    my (@modules, @events, @files);
+    my (@modules, @events, @files, @inline);
     my $follow = False;
     my $transform-name;
     my $timestamp-field = "timestamp";
@@ -110,7 +112,8 @@ sub run-cli(@arguments, :$stdout! --> Int) is export {
         my $arg = @args.shift;
         if $arg eq '--help' {
             $stdout.say: q:to/HELP/;
-Usage: eel.raku [--module Module] [--event Type] [options] [file ... | -]
+Usage: eel.raku [-e CODE] [--module Module] [--event Type] [options] [file ... | -]
+  -e, --eval CODE          Define events inline; repeat to append code
   --module Module          Load a module; repeat to load more
   --event Type             Select an event; repeat to select more
                            Event alone loads its namesake module;
@@ -123,6 +126,11 @@ Usage: eel.raku [--module Module] [--event Type] [options] [file ... | -]
 Without files, read JSONL (or transformed text) from stdin.
 HELP
             return 0;
+        }
+        if $arg eq '-e' || $arg eq '--eval' || $arg.starts-with('--eval=') {
+            my $code=$arg.starts-with('--eval=') ?? $arg.substr(7) !! (@args.shift // die 'Missing --eval code');
+            die 'Empty --eval code' unless $code.trim.chars;
+            @inline.push($code); next;
         }
         if $arg eq '--timestamp-field' { $timestamp-field = @args.shift // die 'Missing timestamp field'; next }
         if $arg eq '--merge-wait' { $wait-specified = True; $merge-wait = +(@args.shift // die 'Missing merge wait'); die 'Invalid merge wait' unless 0 <= $merge-wait < Inf; next }
@@ -140,13 +148,54 @@ HELP
         die "Unknown option $arg" if $arg.starts-with('-') && $arg ne '-';
         @files.push($arg);
     }
-    die 'Specify at least one --module or --event' unless @modules || @events;
+    die 'Specify at least one --eval, --module or --event' unless @inline || @modules || @events;
     die '--merge-wait requires --follow' if $wait-specified && !$follow;
     die 'Empty timestamp field' unless $timestamp-field.chars;
-    @modules = @events.unique unless @modules;
+    @modules = @events.unique unless @modules || @inline;
     die '--follow requires one or more regular files' if $follow && (!@files || @files.first(* eq '-').defined);
-    for @files.grep(* ne '-') { die "Unreadable file: $_" unless .IO.f && .IO.r }
     my (%types, %loaded, %exported);
+    if @inline {
+        my $code="use EEL;\n";
+        my @starts;
+        for @inline -> $part {
+            @starts.push($code.comb("\n").elems+1);
+            $code ~= $part ~ "\n;\n";
+        }
+        my $ast;
+        {
+            CATCH { default {
+                my $error=$_;
+                my $where='--eval';
+                if $error.^can('line') && $error.line.defined {
+                    my $index=(^@starts.elems).grep({ @starts[$_] <= $error.line }).tail;
+                    if $index.defined {
+                        $where='--eval-'~($index+1)~':'~($error.line - @starts[$index] + 1);
+                    }
+                }
+                die $where ~ ": " ~ $error.gist;
+            } }
+            $ast=$code.AST;
+            # Give inline events their public names before running initializers.
+            for $ast.find-nodes(RakuAST::Class) -> $declaration {
+                my $type=$declaration.meta-object;
+                next unless $type ~~ Mu:U && (try $type.^isa(Event)) && $type !=== Event;
+                my $prefix='EEL::CLI::';
+                $type.HOW.set_name($type,$type.^name.substr($prefix.chars)) if $type.^name.starts-with($prefix);
+            }
+            $ast.EVAL;
+        }
+        my $count=0;
+        for $ast.find-nodes(RakuAST::Class) -> $declaration {
+            my $type=$declaration.meta-object;
+            next unless $type ~~ Mu:U && (try $type.^isa(Event)) && $type !=== Event;
+            my $name=$declaration.name.defined ?? $declaration.name.canonicalize !! $type.^name;
+            %types{$name}{$type.^name}=$type;
+            %types{$type.^name}{$type.^name}=$type;
+            %exported{$type.^name}=$type;
+            $count++;
+        }
+        die 'No events declared in --eval code' unless $count;
+    }
     for @modules -> $module {
         die "Invalid module name $module" unless $module ~~ /^ <[\w-]>+ [ '::' <[\w-]>+ ]* $/;
         require ::($module);
@@ -186,6 +235,7 @@ HELP
         die "Ambiguous event $name; use a qualified name" if @found.elems > 1;
         @found[0]
     }) !! %exported.sort(*.key).map(*.value);
+    for @files.grep(* ne '-') { die "Unreadable file: $_" unless .IO.f && .IO.r }
     my $transform;
     if $transform-name.defined {
         my @parts = $transform-name.split('::');

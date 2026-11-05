@@ -2,6 +2,7 @@ use nqp;
 use MetamodelX::Event;
 use EEL::Slang;
 use EEL::SupplyMatch;
+use EEL::Absence;
 
 sub EXPORT() {
     die 'EEL slang requires the Rakudo RakuAST frontend (RAKUDO_RAKUAST=1)'
@@ -32,5 +33,5 @@ sub EXPORT() {
     $LANG.set_how('event', MetamodelX::Event);
     my $actions = $LANG.slang_actions('MAIN').^mixin(EEL::Slang::Actions);
     $LANG.define_slang('MAIN', $grammar.^mixin(EEL::Slang::Grammar[&regular, &args, &block, &paren, &square, &brace]), $actions);
-    Map.new
+    Map.new('Absence' => EEL::Absence)
 }

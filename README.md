@@ -216,7 +216,7 @@ into that new root match.
 
 Named forms are `<data=?event: :area(*.defined)>` and `<absence=!B>`. Positive
 captures expose the recognized event/submatch. Negative captures expose
-`EEL::Absence` with `pattern`, `started-at`, `confirmed-at`, `reason` (`next-step`,
+`EEL::Absence` (also exported as `Absence` by `use EEL`) with `pattern`, `started-at`, `confirmed-at`, `reason` (`next-step`,
 `window` or `eof`) and `witness`. The witness is the original event that allowed
 the next consumption; it is `Nil` for window/EOF. A window confirmation uses its
 deadline; EOF uses the timestamp of the last processed input, without wall time.
@@ -342,3 +342,18 @@ The modules of the previous textual parser, its runner/indexes and fixtures were
 removed after separating the current API from those dependencies. Migrate old
 declarations to `use EEL` and use `$supply.match(Type)`; `Event.parse` keeps only an
 explicit migration error. The current matcher uses `EEL::Runner` and `EEL::MemoryStorage`.
+
+### Inline event definitions
+
+```sh
+eel -e 'event Hot { pattern TOP { <.event(:type<temperature>, :value(* > 40))> } }' log.jsonl
+```
+
+`-e CODE`, `--eval CODE` and `--eval=CODE` compile Raku code with `use EEL`
+automatically enabled. Repeat the option to append snippets in order, sharing
+helpers and constants. All declared inline events are selected without requiring
+exports; `--event` filters the selection. Inline definitions can be combined
+with `--module`; module-only discovery still uses exported events. Imported
+events are not automatically selected by inline discovery. Code runs normally,
+including initializers; its output goes to stderr, leaving stdout for JSONL.
+Compilation and selection errors exit with status 2 before reading the input.
