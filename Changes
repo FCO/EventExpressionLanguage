@@ -1,0 +1,11 @@
+Revision history for EEL
+
+{{$NEXT}}
+    - Initial release of EEL, an event pattern language for Raku Supplies.
+    - Add event and pattern declarations with captures, recursion, proto/multi
+      dispatch, alternatives, repetition and interleaving.
+    - Support partitioning, event-time windows, lookahead and absence detection.
+    - Provide Supply.match with object matching and optional event reemission.
+    - Add an indexed in-memory runner for active patterns and temporal queries.
+    - Provide the eel CLI for JSONL logs, transformations, inline event definitions
+      and timestamp-ordered merging of files and live streams.

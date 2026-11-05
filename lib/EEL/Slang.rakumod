@@ -303,7 +303,7 @@ role Actions is export {
             $max = cap($/, 'max') ?? (cap($/, 'max').Str eq '*' ?? Inf !! cap($/, 'max').Str.Int) !! $min;
         }
         $/.panic('Pattern repetition has an inverted range') if $min > $max;
-        my $suffix = cap($/, 'selection').Str;
+        my $suffix = (cap($/, 'selection') // '').Str;
         my $selection = $suffix eq '?' ?? 'first' !! ($suffix eq '!' ?? 'last' !! 'all');
         make %(:$min, :$max, :$selection);
     }

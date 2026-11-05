@@ -4,8 +4,8 @@ EEL recognizes event sequences in Raku `Supply`s. The slang compiles `event` and
 `pattern` declarations into definitions executed by a runner with in-memory state.
 
 Requires Rakudo with the **RakuAST** frontend, on macOS or Linux. Enable it with
-`RAKUDO_RAKUAST=1` when it is not the default frontend. Installation uses the
-historical `EventGrammar` distribution, but the public API is imported with `use EEL`.
+`RAKUDO_RAKUAST=1` when it is not the default frontend. The distribution is named
+`EEL`, and the public API is imported with `use EEL`.
 
 ```sh
 zef install .
