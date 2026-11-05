@@ -1,6 +1,8 @@
 Revision history for EEL
 
 {{$NEXT}}
+
+0.1  2026-11-05T03:50:38Z
     - Initial release of EEL, an event pattern language for Raku Supplies.
     - Add event and pattern declarations with captures, recursion, proto/multi
       dispatch, alternatives, repetition and interleaving.
