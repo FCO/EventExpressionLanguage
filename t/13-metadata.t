@@ -1,0 +1,31 @@
+use lib 'lib';
+use Test;
+use EEL;
+use EEL::Metadata;
+use EEL::Input;
+my @ids = (^500).map({ event-id() });
+is @ids.unique.elems,500,'IDs are unique';
+is-deeply @ids.sort.Array,@ids.Array,'IDs increase locally';
+my @parallel = await (^8).map({ start { (^100).map({ event-id() }).Array } });
+is @parallel.map({ |$_ }).unique.elems,800,'concurrent generation remains unique';
+is timestamp(1).to-posix[0],1,'numeric epoch';
+is timestamp('1970-01-01T00:00:02Z').to-posix[0],2,'ISO time';
+throws-like { timestamp(Inf) },X::AdHoc,'infinite timestamp rejected';
+throws-like { metadata({event-id=>'bad'}) },X::AdHoc,'invalid ID rejected';
+my %input=type=>'ping',timestamp=>2,event-id=>@ids[0];
+my $view=snapshot(%input);
+is $view.fields<event-id>,@ids[0],'received ID retained';
+is $view.fields<timestamp>.to-posix[0],2,'snapshot timestamp normalized';
+is %input<timestamp>,2,'raw input is unchanged';
+class External { has $.value=3 }
+my $object=External.new;
+ok snapshot($object).fields<timestamp> ~~ Instant,'external object gets time metadata';
+event Ping { pattern TOP { <capture=.event(:type<ping>)> } }
+my @result;
+(%input,).Supply.match(Ping).tap(-> $v { @result.push($v) });
+is @result.elems,1,'input recognized';
+is @result[0].timestamp.to-posix[0],2,'derived timestamp inherited';
+isnt @result[0].event-id,@ids[0],'derived identity is new';
+is @result[0]<capture>.timestamp.to-posix[0],2,'capture timestamp inherited';
+is @result[0]<capture>.event-id,@ids[0],'capture retains original event identity';
+done-testing;

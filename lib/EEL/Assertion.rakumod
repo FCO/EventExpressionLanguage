@@ -1,0 +1,15 @@
+unit class EEL::Assertion;
+has Bool $.positive is required;
+has Bool $.ignore = True;
+has Str $.pattern is required;
+has Str $.capture = '';
+has $.owner is required;
+has Int $.from-index is required is rw;
+has Int $.seen-index is rw = 0;
+has Instant $.started-at is rw;
+has %.tried is rw;
+has @.windows;
+has @.seeds;
+has @.active is rw;
+has Bool $.started is rw = False;
+has Bool $.deferred-boundary is rw = False;

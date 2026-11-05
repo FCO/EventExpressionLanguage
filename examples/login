@@ -1,10 +1,47 @@
-event request { has $method, $path, $status, $req-id, $timestamp }
-event login {
-    has $session-id = #post.session-id;
-    has $get-time   = #get.timestamp;
-    has $post-time  = #post.timestamp;
-    match {
-        request(#get , method == "GET" , path == "/login", status == 200)
-        request(#post, method == "POST", path == "/login", status == 200, req-id == #get.req-id)
+use lib 'lib';
+use EEL;
+event Login {
+    has Str      $.session-id;
+    has UInt     $.tries;
+    has DateTime() $.start;
+    has DateTime() $.end;
+
+    pattern TOP {
+        :!ignore-unexpected
+        <get=.login-form>
+        :my $form-id = $<get><request>.form-id;
+        <failures=.login-failure($form-id)>*
+        <success=.login-success($form-id)>
+        {
+            $!session-id = $<success><request>.session-id;
+            $!tries      = $<failures>.elems + 1;
+            $!start      = $<get><request>.timestamp;
+            $!end        = $<success><request>.timestamp;
+        }
+    }
+    pattern request(*%pars) { <.event: :type<request>, |%pars> }
+
+    pattern login-form {
+        <request: :path</login>, :method<GET>, :status(200)>
+    }
+
+    pattern login-failure(Str $form-id) {
+        | <request: :path</login>, :method<POST>, :$form-id, :status( * < 200 )>
+        | <request: :path</login>, :method<POST>, :$form-id, :status( * >= 300)>
+    }
+
+    pattern login-success(Str $form-id) {
+        <request: :path</login>, :method<POST>, :$form-id, :status( 200 <= * < 300 )>
     }
 }
+
+my $error;
+(
+    {type => 'request', path => '/login', method => 'GET', status => 200, form-id => 'form-1', timestamp => DateTime.new('2026-01-01T00:00:00Z')},
+    {type => 'request', path => '/login', method => 'POST', status => 401, form-id => 'form-1', timestamp => DateTime.new('2026-01-01T00:00:01Z')},
+    {type => 'request', path => '/login', method => 'POST', status => 200, form-id => 'form-1', session-id => 'session', timestamp => DateTime.new('2026-01-01T00:00:02Z')},
+).Supply.match(Login).tap(
+    -> $login { say "login {$login.session-id}: {$login.tries} tries" },
+    quit => -> $failure { $error = $failure },
+);
+$error.throw if $error.defined;

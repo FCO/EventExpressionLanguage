@@ -1,30 +1,19 @@
-########################
-# Emits a FireRisk event if its too hot and too dry on a given area
-########################
-
-event Temperature is generic-hash-event { has Int $.area; has Rat $.value }
-event Humidity    is generic-hash-event { has Int $.area; has Rat $.value }
-
+use lib 'lib';
+use EEL;
 event FireRisk {
-  has Int $.area;
-  has Rat $.temparature;
-  has Rat $.humidity;
-
-  pattern TOP {
-    [
-      [ <hot> & <dry> ]
-      <?{ $<hot>.area == $<dry>.area }>
-      { $!area = $<hot>.area }
-    ] in 5min
-    { $!temperature = $<hot>.value }
-    { $!humidity    = $<dry>.value }
-  }
-
-  pattern hot {
-    <Temperature> <?{ $<Temperature>.value > 40 }>
-  }
-
-  pattern dry {
-    <Humidity>    <?{ $<Humidity>.value < 20 }>
-  }
+    has $.area;
+    has $.temperature;
+    has $.humidity;
+    pattern TOP {
+        [ :5min
+            <hot=.event(:type<temperature>, :value({'>' => 40}))>
+            <dry=.event(:type<humidity>, :area($<hot>.data<area>), :value({'<' => 20}))>
+            |
+            <dry=.event(:type<humidity>, :value({'<' => 20}))>
+            <hot=.event(:type<temperature>, :area($<dry>.data<area>), :value({'>' => 40}))>
+        ]
+        { $!area = $<hot>.data<area>; $!temperature = $<hot>.data<value>; $!humidity = $<dry>.data<value> }
+    }
 }
+({type => 'temperature', value => 45, area => 'north'},
+ {type => 'humidity', value => 10, area => 'north'}).Supply.match(FireRisk).tap: -> $risk { say "fire risk: {$risk.area}" };

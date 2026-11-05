@@ -1,4 +1,0 @@
-event new-event {
-    has $value = 1;
-    has $a, $b, $value
-}

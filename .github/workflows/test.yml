@@ -1,19 +1,26 @@
 name: test
-
-on:
-  - push
-
+on: [push, pull_request]
 jobs:
-  perl6:
-
-    runs-on: ubuntu-latest
-
-    container:
-      image: fernandocorrea/red-tester-no-run
-
+  raku:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RAKUDO_RAKUAST: '1'
     steps:
-      - uses: actions/checkout@v1
-      - name: raku -v
-        run: raku -v
-      - name: Run Tests
-        run: zef install -v .
+      - uses: actions/checkout@v4
+      - uses: Raku/setup-raku@v1
+      - run: raku -v
+      - run: zef install --deps-only .
+      - run: raku tools/test.raku
+      - name: Install into isolated repository
+        run: zef install . --install-to="inst#$RUNNER_TEMP/eel" --/test --/depends
+      - name: Smoke test installed CLI away from checkout
+        shell: bash
+        run: |
+          export RAKULIB="inst#$RUNNER_TEMP/eel"
+          cd "$RUNNER_TEMP"
+          raku -e 'use EEL; event Smoke { pattern TOP { <.event(:type<ping>)> } }; ( {type=>"ping"}, ).Supply.match(Smoke).tap(-> $event { say $event.^name })'
+          "$RUNNER_TEMP/eel/bin/eel" --help
