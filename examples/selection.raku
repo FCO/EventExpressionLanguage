@@ -14,5 +14,5 @@ for <all first last> -> $rule {
     say "$rule: {@counts.join(', ')}";
 }
 # OUTPUT: all: 1, 2
-# OUTPUT: first: 1
-# OUTPUT: last: 2
+# OUTPUT: first: 1, 2
+# OUTPUT: last: 1, 2

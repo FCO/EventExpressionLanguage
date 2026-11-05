@@ -102,6 +102,15 @@ sub nullable($node, %nullable --> Bool) {
         default { so $node.children.map({ nullable($_, %nullable) }).all }
     }
 }
+# Entry rules may be nullable, but must still have a consuming path.
+sub productive($node, %rules --> Bool) {
+    given $node.kind {
+        when 'assertion' { False }
+        when 'call' { $node.name eq 'event' || (%rules{$node.name} // False) }
+        when 'repeat' { $node.properties<max> > 0 && productive($node.children[0], %rules) }
+        default { so $node.children.first({ productive($_, %rules) }).defined }
+    }
+}
 sub initial-calls($node, %nullable --> List) {
     given $node.kind {
         when 'call' { return $node.name eq 'event' ?? ().List !! ($node.name,).List }
@@ -184,7 +193,6 @@ submethod TWEAK() {
             }
             last unless $changed;
         }
-        die "Entry pattern '$!rule' must consume at least one event" if %nullable{$!rule};
         my %graph = %rules.map({ .key => initial-calls(.value, %nullable) });
         sub check-cycle($name, @path) {
             die "Recursive subpattern '$name' can recurse without consuming an event"
@@ -192,6 +200,18 @@ submethod TWEAK() {
             check-cycle($_, [|@path, $name]) for %graph{$name}.list;
         }
         check-cycle($_, []) for %rules.keys;
+        my %productive = %rules.keys.map({ $_ => False });
+        loop {
+            my $changed = False;
+            for %rules.kv -> $name,$definition {
+                if !%productive{$name} && productive($definition,%productive) {
+                    %productive{$name}=True;
+                    $changed=True;
+                }
+            }
+            last unless $changed;
+        }
+        die "Entry pattern '$!rule' must consume at least one event" unless %productive{$!rule};
         for %rules.values -> $definition {
             for nodes($definition).grep(*.kind eq 'repeat') -> $repeat {
                 die 'Unbounded repetition must consume an event in its body'
@@ -571,7 +591,7 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                 }
                 when 'repeat' {
                     my $policy = $node.properties<selection> // 'all';
-                    $current.selections.push([++$!next-selection,$policy]) if $policy ne 'all';
+                    $current.selections.push([++$!next-selection,$policy,nqp::objectid($node.origin // $node).Str]);
                     array-captures($frame, $node.children[0]);
                     $frame.todo.unshift(Repeat.new(:$node));
                 }
@@ -986,6 +1006,7 @@ method !applicable($c,$event,$view) {
     self!main-applicable($c,$event,$view)
 }
 method !starter-applicable($c,$event,$view) {
+    return self!in-partition($c,$event) if $c.done;
     return so $c.positive.seeds.first({ self!starter-applicable($_,$event,$view) }).defined if $c.positive.defined;
     if $c.negatives {
         return True if $c.negatives.first({ .seeds.first({ self!starter-applicable($_,$event,$view) }).defined }).defined;
@@ -1017,7 +1038,7 @@ method !inherit-gates($parent,$branch) {
 }
 method !remap-gates($c) {
     $c.choices=$c.choices.map({ (%!rekeys{.key} // .key) => .value }).Hash;
-    $c.selections=$c.selections.map({ [(%!selection-rekeys{.[0]} // .[0]),.[1]] }).Array;
+    $c.selections=$c.selections.map({ [(%!selection-rekeys{.[0]} // .[0]),|.skip(1)] }).Array;
     self!remap-gates($_) for $c.shuffle;
 }
 method !bind-partition($c,$origin,$key) {
@@ -1150,7 +1171,7 @@ method !join-shuffle($current) {
             my $index=@indices.min;
             my $record=%!tape{$index};
             my $time=event-time($record.view.fields<timestamp>);
-            return ().List if $gate.windows.first({ .start.defined && $time-.start > .duration }).defined;
+            return ().List if $gate.windows.first({ .start.defined && $time-.start >= .duration }).defined;
             my ($order,$cursor,$view,$arrival)=($!event-order,$!cursor,$!input-view,$!arrival);
             my $prohibited;
             {
@@ -1175,7 +1196,7 @@ method !bind-start($continuation) {
     if !$continuation.consumed && $continuation.selections {
         $continuation.selections = $continuation.selections.map(-> $entry {
             %!selection-rekeys{$entry[0]} //= ++$!next-selection;
-            [%!selection-rekeys{$entry[0]},$entry[1]]
+            [%!selection-rekeys{$entry[0]},|$entry.skip(1)]
         }).Array;
     }
     if !$continuation.consumed && $continuation.choices {
@@ -1189,6 +1210,13 @@ method !bind-start($continuation) {
 }
 method !advance(EEL::Continuation:D $continuation, $event --> List) {
     self!bind-start($continuation);
+    if $continuation.done {
+        if $continuation.partition && !$continuation.partition<bound> {
+            $continuation.partition<key> = %!partition-keys{nqp::objectid($continuation).Str};
+            $continuation.partition<bound> = True;
+        }
+        return ($continuation,).List;
+    }
     return self!assertion-step($continuation,$event) if $continuation.positive.defined || $continuation.negatives;
     self!consume($continuation,$event)
 }
@@ -1216,8 +1244,8 @@ method !consume(EEL::Continuation:D $continuation, $event --> List) {
 method EEL-input-view() { $!input-view }
 
 method !expired($c,Real $now) {
-    return True if $c.negatives.grep(!*.deferred-boundary).first({ .windows.first({ .start.defined && $now-.start > .duration }).defined }).defined;
-    return True if $c.windows.first({ .start.defined && $now - .start > .duration }).defined;
+    return True if $c.negatives.grep(!*.deferred-boundary).first({ .windows.first({ .start.defined && $now-.start >= .duration }).defined }).defined;
+    return True if $c.windows.first({ .start.defined && $now - .start >= .duration }).defined;
     so $c.shuffle.grep(!*.done).first({ self!expired($_,$now) }).defined
 }
 method !expire(Real $now) {
@@ -1304,6 +1332,7 @@ method !refresh-starters(Int $index) {
     @!starters[$index]=self!start(@!patterns[$index]).Array;
     my @ids;
     for @!starters[$index].kv -> $position,$c {
+        $c.query=EEL::Query.new if $c.done;
         @ids.push($!starter-storage.register($c.query,{:$index,:$position,:$c},:waits(self!waits($c)),:groups({history=>[]})));
     }
     @!starter-ids[$index]=@ids.Array;
@@ -1370,16 +1399,8 @@ method !round($event, :$prepared --> List) {
 }
 
 method !queue($continuation) {
-    $continuation.completed-at = $!event-order unless $continuation.completed-at;
+    $continuation.completed-at = $!event-order;
     $continuation.result-order = ++$!result-order;
-    if $continuation.selections {
-        sub equivalent($other) {
-            ($other.choices eqv $continuation.choices) && ($other.selections eqv $continuation.selections)
-        }
-        my @peers=$!retained.related($continuation);
-        return if @peers.first({ equivalent($_) && selection-better($_,$continuation) }).defined;
-        $!retained.remove(.result-order) for @peers.grep({ equivalent($_) && selection-better($continuation,$_) });
-    }
     $!retained.add($continuation);
 }
 sub lower-choice($other,$candidate) {
@@ -1398,16 +1419,37 @@ sub selection-better($other,$candidate) {
     $shared[1] eq 'first' ?? $other.completed-at < $candidate.completed-at !! $other.completed-at > $candidate.completed-at
 }
 method !discarded($continuation) {
-    return True if $continuation.selections.first({ %!selected{.[0]}:exists }).defined;
     so $continuation.choices.kv.map(-> $id,$rank {
         (%!committed{$id}:exists) && %!committed{$id} != $rank
     }).any
+}
+# Stable repeat origin, rather than its per-start selection id, groups
+# overlapping starts. Partition keys keep independent streams independent.
+method !selection-groups($c --> List) {
+    my $partition=$c.partition && $c.partition<bound>
+        ?? (partition-key($c.partition<key>) // '') !! '';
+    $c.selections.grep({ .[1] ne 'last' }).map({
+        nqp::objectid($c.result.WHAT).Str ~ '|' ~ .[2] ~ '|' ~ $partition.chars ~ ':' ~ $partition
+    }).List
+}
+method !selection-outranks($other,$candidate --> Bool) {
+    my @groups=self!selection-groups($candidate);
+    my @other=self!selection-groups($other);
+    for @groups.kv -> $i,$group {
+        next unless $group eq any(@other);
+        my $policy=$candidate.selections.grep({ .[1] ne 'last' })[$i][1];
+        return $other.result-order < $candidate.result-order if $other.consumed == $candidate.consumed;
+        return $policy eq 'first' ?? $other.consumed < $candidate.consumed
+            !! $other.consumed > $candidate.consumed;
+    }
+    False
 }
 method !release(--> List) {
     my %changes=$!storage.changes;
     $!retained.affect(%changes);
     $!retained.mark-all if $!reference-retained;
     my @out;
+    my %published;
     loop {
         my @ready=$!retained.ready;
         last unless @ready;
@@ -1421,29 +1463,32 @@ method !release(--> List) {
             for $candidate.choices.keys -> $id { %related{$_}=True for $!storage.members('choice',$id) }
             for $candidate.selections -> $entry { %related{$_}=True for $!storage.members('selection',$entry[0]) }
             my @live=$!storage.entries(%related.keys).map(*.continuation);
-            next if @peers.first({ $_ !=== $candidate && selection-better($_,$candidate) }).defined;
-            next if @live.first(-> $other {
-                my $shared=shared-selection($candidate,$other);
-                $shared.defined && $shared[1] eq 'last' && !lower-choice($other,$candidate)
-            }).defined;
             next if (|@live,|@peers).first(-> $other {
                 $candidate.choices.keys.first(-> $id {
                     ($other.choices{$id}:exists) && $other.choices{$id} < $candidate.choices{$id}
                 }).defined
             }).defined;
+            my @groups=self!selection-groups($candidate);
+            if @groups.first({ %published{$_}:exists }).defined
+                || (@groups && $!retained.snapshot.first(-> $other {
+                    $other !=== $candidate && !self!discarded($other)
+                        && self!selection-outranks($other,$candidate)
+                }).defined) {
+                $!retained.remove($candidate.result-order);
+                next;
+            }
+            %published{$_}=True for @groups;
             my $winner=$candidate;
             $!retained.remove($winner.result-order);
             my %prune;
-            for $winner.selections -> $entry {
-                %!selected{$entry[0]}=True;
-                %prune{$_}=True for $!storage.members('selection',$entry[0]);
-            }
             for $winner.choices.kv -> $id,$rank {
                 %!committed{$id}=$rank;
                 %prune{$_}=True for $!storage.members('choice',$id);
             }
             for $!storage.entries(%prune.keys) -> $entry { $!storage.remove($entry.id) if self!discarded($entry.continuation) }
-            @out.push($winner.result.EEL-identify);
+            # Forks preserve the candidate's identity; publishing a new snapshot
+            # must not turn growth of that candidate into a different event ID.
+            @out.push($winner.result);
             # Publishing may unblock an earlier result. Requeue the rest so
             # the next pass again chooses the earliest eligible source path.
             my %changed=|$!storage.changes,|$!retained.changes;

@@ -60,7 +60,7 @@ is $executions, 1, 'action runs only when invoked';
 is-deeply of-kind($definition, 'ignore-unexpected')».properties.map(*.<enabled>).List, (True, False), 'both unexpected-event adverbs recorded';
 is of-kind($definition, 'window-start')[0].properties<seconds>, 300, 'window converted to seconds';
 is of-kind($definition, 'window-start')[0].properties<clock>, 'event', 'event clock recorded';
-ok of-kind($definition, 'window-start')[0].properties<inclusive>, 'window limit is inclusive';
+nok of-kind($definition, 'window-start')[0].properties<inclusive>, 'window limit is exclusive';
 
 my $operators = $event.operators;
 is $operators.children[0].kind, 'alternative', 'alternation has lowest precedence';

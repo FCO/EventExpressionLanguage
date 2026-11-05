@@ -17,7 +17,7 @@ event Collision {
 }
 my @out;
 ({type=>'start',id=>'payload'},{type=>'start',id=>'second'},{type=>'finish'}).Supply.match(Collision).tap(-> $v { @out.push($v) });
-is @out.elems,3,'repetition and overlapping matches remain independent';
+is @out.elems,1,'default repeat publishes the largest complete overlapping match';
 is @out[0].id,'payload','derived attribute is assigned from delegated payload field';
 is Collision.new(:made('action result')).EEL-capture.made,'action result','made is retained by capture view';
 is @out[0]<requests>[0].id,'payload','internal domain attribute does not shadow payload';

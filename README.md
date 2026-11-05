@@ -65,9 +65,9 @@ slang is lexical. For direct control use `EEL::Runner.new(:patterns[Type])`, `.p
 | `A \|\| B` | Priority to the left, with alternatives kept for later failures |
 | `[ ... ]` | Group with lexical scope |
 | `( ... )` | Group with positional capture |
-| `?`, `*`, `+`, `** 2`, `** 1..3`, `** 2..*` | All valid completions |
-| `??`, `*?`, `+?` | First complete conclusion |
-| `?!`, `*!`, `+!` | Last complete conclusion |
+| `?`, `*`, `+`, `** 2`, `** 1..3`, `** 2..*` | Largest complete match per event |
+| `??`, `*?`, `+?`, `** 1..3?` | Smallest complete match per event (including zero) |
+| `?!`, `*!`, `+!`, `** 1..3!` | Every complete match per event |
 | `:5min`, `[ :5min ... ]` | Window in event time, until the end of the scope |
 | `OPEN ~ CLOSE BODY` | Recognizes OPEN, BODY and requires CLOSE; accepts recursion |
 | `<name>`, `<alias=.name>` | Captured call |
@@ -102,20 +102,20 @@ Repeated captures are combined in the global consumption order. Variables extern
 to the branches are preserved across switches; each branch's local variables keep
 their own state.
 
-The quantifier policies select **complete** results per invocation and
-recognition start. `A+? B` keeps extensions of A only while needed to
-recognize B. "Last" retains conclusions until failure, temporal expiry or EOF;
-cancellation discards what is held. Ties on the same event use the stable
-order of paths and publish one result. Combined policies have left-to-right
-priority. `*?` and `??` may choose zero occurrences when the
-remainder of the pattern is already complete. `**` quantifiers keep emitting
-every conclusion. These suffixes control emission and do not simply mean
-copying the backtracking policies of textual regexes.
+The quantifier policies select **complete** results from the current event,
+across overlapping recognition starts of the same repeat and partition.
+Without a suffix, publish the match consuming the most events; suffix `?`
+publishes the match consuming the fewest, including zero when permitted;
+suffix `!` publishes every completion. Repetition bounds still apply.
+Ties for largest or smallest use stable path order. Combined policies have
+left-to-right priority. All live starts keep growing independently even when
+their current result is not published. Expiring a winner lets another valid
+start win, even with the same size. EOF does not flush losing candidates,
+but can resolve assertions and ordered alternatives that require end of input.
 
 Actions run on speculative paths, as in `|`; external effects are not
 transactional. Forks preserve variables, container aliases and multi
-candidates without re-running actions or subscription defaults. Nullable entry
-rules, recursion without consumption and unbounded nullable repetitions are
+candidates without re-running actions or subscription defaults. Entry rules with no consuming path, recursion without consumption and unbounded nullable repetitions are
 rejected during validation.
 
 ## Captures and metadata
@@ -142,8 +142,11 @@ captures.
 `event-id` is UUIDv7, preserved when received valid or generated when absent.
 Generation is monotonic and synchronized within the process; between processes,
 uniqueness is probabilistic, without coordination. The ID orders by generation,
-not by the time of historical logs. Each derived event receives a new ID and the
-timestamp of the last consumed event.
+not by the time of historical logs. Each recognition candidate receives a new ID,
+which is preserved as it grows and emits successive snapshots. Different starts
+have different IDs, including when an expired winner is replaced by another
+candidate. Each emitted snapshot has the timestamp of its last consumed event;
+previously emitted snapshots remain unchanged.
 
 ## Partitions, scopes and windows
 
@@ -168,7 +171,7 @@ Units: `ms`, `s`, `min`, `h`, `d`, `m`, `y`. Aliases: `millisecond(s)`, `sec`,
 a minute uses `min`. Months are 30 days and years 365 days. Non-negative durations
 can be decimal, but must represent an integer number of nanoseconds.
 
-Windows use **event timestamps** and inclusive bounds. The runner keeps
+Windows use **event timestamps** and exclusive upper bounds. The runner keeps
 a global watermark per subscription: the greatest received timestamp minus `:lateness`,
 a finite, non-negative duration in seconds representable in integer nanoseconds, default zero. The queue is ordered
 by timestamp and then by arrival. The snapshot is prepared when the input is received,
@@ -178,8 +181,7 @@ are still accepted. With `:reemit`, only processed inputs are published, in
 temporal order, using their original snapshots.
 
 The watermark advances only through input. Idle flow and `.pending` do not advance
-time: a window is not closed by the local clock. An inclusive deadline only
-closes when the watermark passes it. EOF drains the queue and ends incomplete
+time: a window is not closed by the local clock. A deadline closes when the watermark reaches it, before processing that event. EOF drains the queue and ends incomplete
 paths; cancellation discards buffers and held conclusions. Expiring a
 window does not call `FAILGOAL`.
 
@@ -235,6 +237,41 @@ window, pending assertions can retain history indefinitely. See
 [Fire Risk 2](examples/fire-risk-2.raku).
 
 ## Indexed search
+
+See [Runtime architecture](docs/runtime-architecture.md) for how definitions,
+continuations, wait subscriptions, indexes and result selection fit together.
+
+Field conditions have a presence index, including opaque predicates: missing
+fields are rejected before invoking their predicates. The forms `*.defined`,
+`!*.defined` and `*.defined.not` also have definition-state indexes. An absent
+field differs from a present undefined value; `False`, `0` and `''` are defined.
+Custom objects remain conservative candidates, and the original predicate makes
+the final decision without running user methods during index lookup. Arbitrary
+blocks such as `{ .defined }` receive presence filtering only.
+
+The index starts with a selective anchor and can intersect its hits with
+secondary equality, type, presence, definition and numeric interval restrictions
+on other fields. Secondary numeric checks use exact `Int`, `Rat` and `FatRat`
+values; other representations retain coercive or custom predicate evaluation.
+Cached interval checks distinguish both bounds, open/closed endpoints and
+coercion policy.
+Checks are cached per input and never invoke opaque predicates. Disjunctive plans
+remain alternatives. Low-yield workloads skip secondary checks, with periodic
+probes to reconsider; final predicates always validate the remaining candidates.
+Index statistics include `intersected` (secondary checks) and `pruned` (anchor
+hits rejected before predicate evaluation).
+
+Literal string predicates such as `:path(*.starts-with('/api/'))` use a
+per-field prefix trie. Lookup follows the input string's Unicode graphemes and
+returns every registered prefix along the path, including the empty prefix.
+Removing subscriptions prunes unused trie nodes. Non-string values retain
+conservative candidates, so custom methods and exceptions are handled by the
+final predicate. Dynamic prefixes and arbitrary blocks retain callable fallback.
+Literal `:path(*.ends-with('.json'))` uses a reverse trie, walking Unicode
+graphemes from the end without reversing text into a new normalized string.
+It has the same fallback and cleanup guarantees. Prefix and suffix conditions
+can be combined on the same field. Index statistics expose `prefix-nodes` and
+`suffix-nodes` for memory and cleanup inspection.
 
 Subscriptions are identified individually. Equalities use hashes; numeric bounds
 and windows use AVL trees of ranges. A deadline queue removes

@@ -9,7 +9,7 @@ for 999999,1000000,1000001 -> $end {
  $r.process({type=>'noise',timestamp=>0});
  $r.process({type=>'A',timestamp=>10/1000});
  is $r.process({type=>'B',timestamp=>(10_000_000+$end)/1_000_000_000}).elems,
-  ($end <= 1_000_000 ?? 1 !! 0),"inclusive event-time boundary $end";
+  ($end < 1_000_000 ?? 1 !! 0),"exclusive event-time boundary $end";
 }
 my $r=EEL::Runner.new(:patterns[Timed]);
 $r.process({type=>'A',timestamp=>0});
@@ -18,7 +18,7 @@ is $r.pending,1,'repeated pending checks do not expire event-time paths';
 $r.process({type=>'noise',timestamp=>2/1000});
 is $r.pending,0,'later watermark expires paths';
 $r.process({type=>'A',timestamp=>3/1000});
-is $r.process({type=>'B',timestamp=>4/1000}).elems,1,'new match has its own deadline';
+is $r.process({type=>'B',timestamp=>3.5/1000}).elems,1,'new match has its own deadline';
 event Units {
  pattern TOP { [ :0.5ms <.event> ] [ :0.5s <.event> ] [ :1.5min <.event> ] [ :1.5h <.event> ] [ :1.5d <.event> ] [ :0.5m <.event> ] [ :0.5y <.event> ] }
 }
@@ -28,7 +28,7 @@ is-deeply nodes(Units.new.TOP).grep(*.kind eq 'window-start').map(*.properties<n
 event Nested { pattern TOP { :1s <.event(:type<A>)> [ :1ms <.event(:type<B>)> <.event(:type<C>)> ] } }
 $r=EEL::Runner.new(:patterns[Nested]);
 $r.process({type=>'A',timestamp=>0}); $r.process({type=>'B',timestamp=>10/1000});
-is $r.process({type=>'C',timestamp=>11/1000}).elems,1,'inner window starts at its own first event';
+is $r.process({type=>'C',timestamp=>10.5/1000}).elems,1,'inner window starts at its own first event';
 event Reordered { pattern TOP { :3s <.event(:type<A>)> <.event(:type<B>)> } }
 $r=EEL::Runner.new(:patterns[Reordered],:lateness(2));
 is $r.process({type=>'B',timestamp=>2}).elems,0,'future event buffered until watermark';

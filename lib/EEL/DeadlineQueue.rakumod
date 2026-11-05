@@ -12,7 +12,7 @@ method add(Real:D $deadline, Int:D $id) {
 }
 method expired(Real:D $now --> List) {
     my @out;
-    while @!heap && @!heap[0][0] < $now {
+    while @!heap && @!heap[0][0] <= $now {
         @out.push(@!heap[0][1]);
         my $tail=@!heap.pop;
         last unless @!heap;

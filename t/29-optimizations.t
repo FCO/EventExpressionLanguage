@@ -118,7 +118,7 @@ ok $copy<self> === $copy,'copier retains cyclic aliases';
 ok $copy !=== %cycle,'copier isolates mutable source';
 
 event Retained {
- pattern TOP { :partition{ .<session> } :!ignore-unexpected <.event(:type<S>)> <a=.event(:type<A>)>+! }
+ pattern TOP { :partition{ .<session> } :!ignore-unexpected [ [ :ignore-unexpected <.event(:type<S>)> <.event(:type<end>)> ] || <.event(:type<S>)> <a=.event(:type<A>)> ] }
 }
 sub retained($reference) {
     my $r=EEL::Runner.new(:patterns[Retained]); $r.EEL-reference-retained($reference);

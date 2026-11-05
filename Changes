@@ -1,6 +1,22 @@
 Revision history for EEL
 
 {{$NEXT}}
+    - Include exact numeric intervals in adaptive cross-field intersection,
+      caching distinct bounds and preserving coercive numeric fallback.
+    - Index literal ends-with predicates with reverse Unicode tries, sharing
+      prefix-trie cleanup and conservative fallback semantics.
+    - Index literal starts-with string predicates with per-field Unicode prefix
+      tries, pruning unused nodes and preserving custom-method fallback.
+    - Intersect anchor hits with cached cross-field restrictions; adaptively
+      skip low-yield secondary checks and expose pruning counters.
+    - Index field presence and canonical defined predicates, with conservative
+      handling of custom objects and shared dotted-field resolution.
+    - Preserve event-id across successive emissions of the same recognition
+      candidate; distinct starts retain distinct identities.
+    - Select largest, smallest (?) or all (!) complete repetition matches per
+      input while preserving overlapping continuations; support ** suffixes.
+    - Allow nullable entry patterns with consuming paths and use exclusive
+      event-time deadlines. Do not flush losing repetition matches at EOF.
 
 0.1  2026-11-05T03:50:38Z
     - Initial release of EEL, an event pattern language for Raku Supplies.

@@ -36,8 +36,8 @@ role Grammar[Mu $regular-statementlist, Mu $regular-arglist, Mu $regular-block, 
     }
     rule eel-piece { <eel-atom> <eel-quantifier>? }
     token eel-quantifier {
-        '**' <.ws> $<min>=\d+ [ <.ws> '..' <.ws> $<max>=[\d+|'*'] ]?
-        | $<short>=[<[?*+]>] $<selection>=[ '?' | '!' ]?
+        [ '**' <.ws> $<min>=\d+ [ <.ws> '..' <.ws> $<max>=[\d+|'*'] ]?
+        | $<short>=[<[?*+]>] ] $<selection>=[ '?' | '!' ]?
     }
     token eel-window { $<amount>=[\d+ ['.' \d+]?] $<unit>=['milliseconds'|'millisecond'|'seconds'|'second'|'minutes'|'minute'|'months'|'month'|'years'|'year'|'hours'|'hour'|'days'|'day'|'min'|'sec'|'ms'|'s'|'h'|'d'|'m'|'y'] <!before \w> }
     token eel-atom {
@@ -208,8 +208,39 @@ sub comparison-ast($expression) {
     }
     @parts.elems == 1 ?? @parts[0] !! condition-call('junction',val('all'),|@parts)
 }
+sub definedness-ast($expression) {
+    my $e=unparen($expression);
+    my $expected=True;
+    if $e ~~ RakuAST::ApplyPrefix && $e.prefix.operator eq '!' {
+        return Nil unless resolves-to-setting($e.prefix, '&prefix:<!>');
+        $expected=False; $e=unparen($e.operand);
+    }
+    if $e ~~ RakuAST::ApplyPostfix && $e.postfix ~~ RakuAST::Call::Method
+        && $e.postfix.name.canonicalize eq 'not' && !$e.postfix.args.args.elems {
+        $expected=!$expected; $e=unparen($e.operand);
+    }
+    return Nil unless $e ~~ RakuAST::ApplyPostfix && $e.operand ~~ RakuAST::WhateverCode::Argument
+        && $e.postfix ~~ RakuAST::Call::Method && $e.postfix.name.canonicalize eq 'defined'
+        && !$e.postfix.args.args.elems;
+    condition-call('definedness',val($expected),$expression)
+}
+sub prefix-ast($expression) {
+    my $e=unparen($expression);
+    return Nil unless $e ~~ RakuAST::ApplyPostfix && $e.operand ~~ RakuAST::WhateverCode::Argument
+        && $e.postfix ~~ RakuAST::Call::Method && $e.postfix.name.canonicalize eq any(<starts-with ends-with>)
+        && $e.postfix.args.args.elems == 1;
+    my $arg=unparen($e.postfix.args.args[0]);
+    return Nil unless $arg.has-compile-time-value;
+    my $value=$arg.maybe-compile-time-value;
+    return Nil unless $value.WHAT === Str && $value.DEFINITE;
+    condition-call($e.postfix.name.canonicalize eq 'starts-with' ?? 'prefix' !! 'suffix',val($value))
+}
 sub indexed-condition($expression) {
     my $e=unparen($expression);
+    my $prefix=prefix-ast($e);
+    return $prefix if $prefix.defined;
+    my $definition=definedness-ast($e);
+    return $definition if $definition.defined;
     my $comparison=comparison-ast($e);
     return $comparison if $comparison.defined;
     if junction-ast($e) {
@@ -316,7 +347,7 @@ role Actions is export {
         my $seconds = cap($/, 'amount').Str.FatRat * %units{cap($/, 'unit').Str};
         my $ns = $seconds * 1_000_000_000;
         $/.panic('Window duration must be an integer number of nanoseconds') unless $ns == $ns.Int;
-        make %(:seconds($seconds == $seconds.Int ?? $seconds.Int !! $seconds), :nanoseconds($ns.Int), :clock<event>, :inclusive);
+        make %(:seconds($seconds == $seconds.Int ?? $seconds.Int !! $seconds), :nanoseconds($ns.Int), :clock<event>, :!inclusive);
     }
     method eel-atom(Mu $/) {
         make cap($/, 'eel-goal') ?? cap($/, 'eel-goal').made

@@ -29,17 +29,8 @@ method matches($input --> Bool) {
         type-equal($value, $expected)
     }
     for $!conditions.kv -> $field, $expected {
-        my $value;
-        if $event{$field}:exists {
-            $value = $event{$field};
-        } else {
-            my $cursor = $event;
-            for $field.split('.') -> $part {
-                return False unless $cursor ~~ Associative && ($cursor{$part}:exists);
-                $cursor = $cursor{$part};
-            }
-            $value = $cursor;
-        }
+        my ($found,$value)=field-value($event,$field);
+        return False unless $found;
         sub member(Any $expected --> Bool) {
             return $expected.accepts($value, -> $a,$b { equal($a,$b,$field) }) if $expected ~~ EEL::Condition;
             return so $expected.($value) if $expected ~~ Callable:D;
@@ -102,6 +93,7 @@ method index-plans(--> List) {
             my $key=scalar-key($expected);
             @field-plans=$key.defined ?? ([%(kind=>'eq',:$field,:$key).item],) !! ([],);
         }
+        @field-plans=@field-plans.map({ [|$_, %(kind=>'presence', :$field)] }).Array;
         my @next;
         for @plans -> $left { for @field-plans -> $right {
             @next.push([|$left,|$right]); return ([],).List if @next.elems > 64;

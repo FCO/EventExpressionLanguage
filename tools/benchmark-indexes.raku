@@ -2,6 +2,7 @@
 use lib 'lib';
 use EEL::MemoryStorage;
 use EEL::Query;
+use EEL::Condition;
 use EEL::Input;
 use EEL;
 use EEL::Runner;
@@ -12,11 +13,15 @@ use EEL::Runner;
 
 sub MAIN(Int :$size=1000, Int :$rounds=50) {
     die 'size and rounds must be positive' unless $size > 0 && $rounds > 0;
-    for <equality intervals overlap opaque> -> $scenario {
+    for <equality intervals overlap opaque conjunctive prefixes suffixes range-intersection> -> $scenario {
         my $storage=EEL::MemoryStorage.new;
         my @queries;
         for ^$size -> $id {
             my %conditions=do given $scenario {
+                when 'range-intersection' { %(gate=>($id div 32),value=>{'>='=>$id*10,'<='=>$id*10+1}) }
+                when 'suffixes' { %(path=>EEL::Condition.suffix(".$id.log")) }
+                when 'prefixes' { %(path=>EEL::Condition.prefix("/endpoint/$id/")) }
+                when 'conjunctive' { %(a=>($id div 32),b=>($id % 32),v=>EEL::Condition.definedness(True, *.defined)) }
                 when 'equality' { %(id=>$id) }
                 when 'intervals' { %(value=>{'>='=>$id*10,'<='=>$id*10+1}) }
                 when 'overlap' { %(value=>{'>='=>0,'<='=>$size*10}) }
@@ -25,7 +30,7 @@ sub MAIN(Int :$size=1000, Int :$rounds=50) {
             my $query=EEL::Query.new(:%conditions);
             @queries.push($query); $storage.register($query,$id);
         }
-        my %event=id=>($size div 2),value=>($size div 2)*10,timestamp=>0;
+        my %event=gate=>($scenario eq 'range-intersection' ?? (($size div 2) div 32) !! 1),path=>($scenario eq 'suffixes' ?? "report.{$size div 2}.log" !! "/endpoint/{$size div 2}/item"),a=>(($size div 2) div 32),b=>(($size div 2) % 32),v=>1,id=>($size div 2),value=>($size div 2)*10,timestamp=>0;
         my $view=snapshot(%event);
         my $start=now;
         my $candidates=0;

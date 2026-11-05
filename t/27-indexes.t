@@ -39,8 +39,8 @@ ok $tree.visited < 30,'interval lookup prunes unrelated subtrees';
 $tree.clear;
 my $heap=EEL::DeadlineQueue.new;
 $heap.add(4,1); $heap.add(2,2); $heap.add(4,3);
-is-deeply $heap.expired(2), ().List,'deadline is inclusive';
-is-deeply $heap.expired(3), (2,), 'earliest deadline expires first';
+is-deeply $heap.expired(2), (2,),'deadline expires at its boundary';
+is-deeply $heap.expired(3), ().List, 'earliest deadline expires first';
 is-deeply $heap.expired(5).sort.List,(1,3),'duplicate deadlines retained';
 
 my $storage=EEL::MemoryStorage.new;
@@ -75,8 +75,8 @@ my $temporal=EEL::MemoryStorage.new;
 $temporal.register(EEL::Query.new,'a',:waits[%(query=>EEL::Query.new,low=>0,high=>5).item],:deadline(5));
 is $temporal.temporal(5).elems,1,'temporal interval end inclusive';
 is $temporal.temporal(6).elems,0,'temporal interval rejects later events';
-is $temporal.expired(5).elems,0,'heap preserves deadline boundary';
-is $temporal.expired(6).elems,1,'heap finds expired subscription';
+is $temporal.expired(5).elems,1,'heap expires at deadline boundary';
+is $temporal.expired(6).elems,0,'heap does not expire a subscription twice';
 $temporal.remove(1);
 is $temporal.temporal(3).elems,0,'removal clears temporal references';
 

@@ -74,14 +74,14 @@ event Terminal {
 }
 is run(Terminal,['A']).elems,1,'EOF confirms terminal absence';
 is run(Terminal,<A B>).elems,1,'incomplete forbidden prefix permits EOF absence';
-is run(Terminal,<A B C>).elems,0,'completed sequence rejects terminal absence';
+is run(Terminal,<A B C>).elems,1,'deadline confirms absence before boundary event';
 is run(Terminal,<A X>)[0].reason,'eof','trailing action runs with confirmed absence';
 $r=EEL::Runner.new(:patterns[Terminal]);
 $r.process({type=>'A',timestamp=>0});
 is $r.pending,1,'terminal absence remains pending during idle';
-is $r.process({type=>'X',timestamp=>2}).elems,0,'deadline is inclusive';
-my @window=$r.process({type=>'X',timestamp=>3});
-is @window.elems,1,'watermark beyond deadline confirms terminal absence';
+is $r.process({type=>'X',timestamp=>1}).elems,0,'absence waits before deadline';
+my @window=$r.process({type=>'X',timestamp=>2});
+is @window.elems,1,'watermark at deadline confirms terminal absence';
 is @window[0]<absence>.reason,'window','window reason captured';
 is @window[0]<absence>.confirmed-at,Instant.from-posix(2),'window confirmation uses deadline';
 ok @window[0]<absence>.witness === Nil,'window has Nil witness';

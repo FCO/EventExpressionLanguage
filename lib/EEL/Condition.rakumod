@@ -5,13 +5,27 @@ has Str $.op = '';
 has Mu $.bound;
 has @.children;
 
+method suffix(Str $bound) { self.new(:kind<suffix>, :$bound) }
+method prefix(Str $bound) { self.new(:kind<prefix>, :$bound) }
 method comparison(Str $op,$bound) { self.new(:kind<compare>,:$op,:$bound) }
 method literal($bound) { self.new(:kind<literal>,:$bound) }
 method junction(Str $kind,*@children) { self.new(:$kind,:@children) }
 
+method definedness(Bool $expected, &predicate) { self.new(:kind<defined>, :op($expected ?? 'yes' !! 'no'), :bound(&predicate)) }
+sub field-value($fields, Str $field) is export {
+    return (True, $fields{$field}) if $fields{$field}:exists;
+    my $cursor=$fields;
+    for $field.split('.') -> $part {
+        return (False, Nil) unless $cursor ~~ Associative && ($cursor{$part}:exists);
+        $cursor=$cursor{$part};
+    }
+    (True, $cursor)
+}
 # Conditions emitted by the slang own evaluated bounds, never source strings.
 method accepts($value, &equal --> Bool) {
     given $!kind {
+        when 'suffix' { return so $value.ends-with($!bound) }
+        when 'prefix' { return so $value.starts-with($!bound) }
         when 'compare' {
             return so do given $!op {
                 when '==' { $value == $!bound }
@@ -46,6 +60,9 @@ sub scalar-key($v) is export {
 # DNF of necessary indexable restrictions. An empty conjunction is a wildcard.
 method plans(Str $field --> List) {
     given $!kind {
+        when 'suffix' { return ([%(kind=>'suffix', :$field, value=>$!bound).item],).List }
+        when 'prefix' { return ([%(kind=>'prefix', :$field, value=>$!bound).item],).List }
+        when 'defined' { return ([%(kind=>'defined', :$field, value=>($!op eq 'yes')).item],).List }
         when 'literal' {
             if $field eq 'type' && ($!bound ~~ Str || !$!bound.DEFINITE) {
                 return ([%(kind=>'type',:$field,value=>$!bound).item],).List;
