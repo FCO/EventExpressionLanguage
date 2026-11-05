@@ -1,6 +1,8 @@
 Revision history for EEL
 
 {{$NEXT}}
+
+0.2  2026-11-05T23:17:03Z
     - Include exact numeric intervals in adaptive cross-field intersection,
       caching distinct bounds and preserving coercive numeric fallback.
     - Index literal ends-with predicates with reverse Unicode tries, sharing
