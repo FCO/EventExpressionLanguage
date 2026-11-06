@@ -14,6 +14,7 @@ class Frame {
     has @.layout;
     has Bool $.share-definition = False;
     has Str $.capture = '';
+    has Int $.cut-id = 0;
     has Hash $.saved-partition is rw = {};
     has Int $.saved-window-count = 0;
     has Bool $.saved-ignore = True;
@@ -50,3 +51,12 @@ has $.positive is rw;
 has @.negatives is rw;
 has Bool $.terminal is rw = False;
 has @.deferred is rw;
+
+has Bool $.start-anchor is rw = False;
+has Bool $.eof-wait is rw = False;
+has @.cut-scopes is rw;
+has @.cut-decisions is rw;
+
+# Window anchor metadata survives completion and scope restoration.
+has @.window-anchors is rw;
+has $.end-window is rw;

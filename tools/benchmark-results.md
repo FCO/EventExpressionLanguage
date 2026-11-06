@@ -1,8 +1,8 @@
 # Optimization measurements
 
 Local measurement on macOS, Rakudo/RakuAST, with one warm-up and median of seven
-repetitions. These are synthetic microbenchmarks and internal baselines, not a
-comparison between releases nor a guarantee for other machines/loads.
+repetitions. These synthetic microbenchmarks compare execution strategies within
+the matcher; their results are not guarantees for other machines or loads.
 
 Commands:
 
@@ -48,15 +48,15 @@ results at every round, keeping the same priority rules.
 Structural results verified in the tests:
 
 - One bucket visit to find an ID among 1,000/10,000 waits of the same type.
-- One interval node per conjunction/field, instead of two for the two ends.
+- One interval node per conjunction/field represents both bounds.
 - No starter evaluation on inputs irrelevant to 100 definitions.
 - No rematerialization of safe frames; mutable containers are still copied.
 - No reconsideration of held results in unaffected groups.
 - Transition from index to scan and selectivity recovery through probes.
 
 Broad loads are not sublinear: if every match needs to advance, the
-work remains proportional to the number of matches. Fallbacks,
-hysteresis measures and differential tests were kept to preserve the semantics. The values
+work remains proportional to the number of matches. Fallbacks, hysteresis and
+differential tests preserve the matcher's semantics. The values
 are not temporal asserts in CI. The quadratic case of buffer sorting and the
 initialization of thousands of classes make some size-10,000 scenarios
 expensive; only the selective searches were run at that scale.

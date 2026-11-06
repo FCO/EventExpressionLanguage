@@ -1,6 +1,10 @@
 Revision history for EEL
 
 {{$NEXT}}
+    - Support separate Actions objects, make semantic values and .made/.ast
+      projections of published Supply results.
+    - Evaluate dynamic ** { ... } repetition bounds once per entry, preserving
+      them across forks and validating integer counts and inclusive ranges.
 
 0.2  2026-11-05T23:17:03Z
     - Include exact numeric intervals in adaptive cross-field intersection,

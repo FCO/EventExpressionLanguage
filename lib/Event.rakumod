@@ -12,6 +12,8 @@ has UInt         $.index    = 0;
 has              $.data;
 has              $.actions;
 has              $.made;
+method make($value) { $!made = $value; self }
+method ast { $!made }
 has Capture      $.args;
 
 my sub to-map(\match --> Map()) {

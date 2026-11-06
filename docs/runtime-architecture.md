@@ -5,7 +5,7 @@ produce a complete result and still retain a continuation that can grow. Indexes
 reduce the number of waits examined for each input; they do not replace pattern
 execution or final predicate evaluation.
 
-This guide describes the implementation in this checkout. Start with the
+This guide describes EEL's runtime. Start with the
 [language guide](../README.md) for syntax and public options.
 
 ## From source to a running candidate
@@ -34,6 +34,8 @@ own [continuation](../lib/EEL/Continuation.rakumod), describing what remains:
 | `query` | Predicate for the next event wait |
 | `windows`, `partition` | Temporal and partition constraints |
 | `selections`, `choices` | Repeat policies and ordered-alternative decisions |
+| `cut-scopes`, `cut-decisions` | Active alternative scopes and saved branch decisions |
+| `start-anchor`, `eof-wait`, `end-window`, `window-anchors` | Stream constraints, end waits and persistent window priority metadata |
 | `consumed`, `done` | Consumption count and completion state |
 
 Frames also retain definitions, local-state bookkeeping and the scope settings
@@ -76,9 +78,17 @@ updates event contexts and timestamps, increments consumption, then seeks again.
 After `A`, the example waits for `B`. When the last frame returns, it is complete.
 Subpattern calls push frames; returns pop them and restore saved scope settings.
 
-Repetitions use a `Repeat` marker with a count. The runner can branch into
+Repetitions use a `Repeat` marker with a count and evaluated minimum/maximum.
+A dynamic `** { ... }` block runs at entry, and its validated bounds are stored
+on the marker and copied across forks. Dynamic closures prevent shared-definition
+optimization; static nullability analysis conservatively uses `0..Inf`, and
+runtime rejects an actually unbounded repetition of a nullable body. The runner can branch into
 another occurrence or the suffix when the bounds permit. It does not unroll an
-unbounded repetition in advance. Alternatives and conjunctions also create
+unbounded repetition in advance. Separated repeats retain a second child for
+the separator; continuation counts track items, while consumption includes both
+items and separators. A trailing-separator path is created only after an item.
+Named expression captures use the same forkable end marker and capture deltas
+as positional groups, writing to a name instead of a positional slot. Alternatives and conjunctions also create
 paths; shuffle tracks separate operand continuations and event assignments.
 
 ## Storage and event processing
@@ -140,6 +150,14 @@ of its last consumed event.
 Storage subscription IDs and completion `result-order` values are internal
 bookkeeping identifiers. They are distinct from the derived event's `event-id`.
 
+An optional external Actions object is passed from `Supply.match` through the
+per-subscription runner to pattern contexts. Before a pattern frame returns,
+its named Action receives the context as `$/`, after inline actions and before
+its capture is returned. Proto-family frames invoke the family-named Action
+after adopting the selected candidate's result. `make` writes the context semantic value; `.ast`
+aliases `.made`. Supply projections map published results, rather than
+observing speculative `make` calls. The Actions object itself is shared.
+
 Actions execute on speculative paths, including candidates that will not be
 emitted. Domain attributes such as `$!count` belong to copied candidate state;
 external effects such as writing files or sending requests are not rolled back.
@@ -186,7 +204,7 @@ Five inputs at timestamps 0, 1, 2, 3 and 4 produce:
 
 The first three emissions share an ID. The next two winners have different IDs.
 Zero-occurrence conclusions are omitted from the table; they do not win the
-maximum policy here. A `*?` version selects zero instead.
+maximum policy here. The `*?` quantifier selects zero instead.
 
 Windows use event timestamps and exclusive upper bounds: a candidate started at
 0 under `:3s` expires before consuming the input at 3. Scope restoration ends
@@ -299,3 +317,55 @@ query-planner API. Useful executable references include:
 - [Prefix tries](../t/38-prefix-index.t) and [suffix tries](../t/39-suffix-index.t)
 - [Numeric intersection and coercion](../t/40-range-intersection.t)
 - [Assertions and replay](../t/31-assertion-integration.t)
+
+## Boolean guards, anchors and explicit commitment
+
+Code assertions run in `!seek` and reject their current path on boolean mismatch.
+They retain per-frame closures across forks, just like actions. Trailing guards
+behind terminal negative recognition are deferred until absence confirmation.
+
+Absolute start (`^^`) starters retain a flag so an indexed, cached starter
+cannot move past the subscription's first processed event. Absolute end (`$$`)
+suspends the continuation at an all-event wait in its current partition;
+a subsequent input rejects it, and only real subscription EOF resumes its suffix.
+Historical replay boundaries, window expiration and cancellation do not establish EOF.
+
+Window anchors bind to the innermost active window at their position; without
+one, they act as absolute anchors. Window `$` stores its target deadline and
+resumes on either that exact window boundary or real EOF, before expiration
+removes the continuation. An earlier enclosing deadline cannot confirm it.
+
+Window `^` requires an unstarted window and records its stable definition origin.
+Consumption binds the start timestamp, input ordinal, effective deadline and
+typed partition key. Forks copy this metadata; shuffle branches transfer it to
+their parent. Completed recognitions compete by earliest start, ahead of repeat
+size selection across starts. Emission installs a winner per type, anchor origin
+and partition, independent of the recognition continuation's lifetime. It also
+prunes earlier starts. Later completions are discarded as snapshots while their
+growth paths remain alive. Expiration releases ownership but never replays
+suppressed snapshots; a new match, including one confirmed by `$`, is required.
+Winner and cutoff records expire together after older paths and suppressed
+snapshots have been pruned; subscription close clears both registries.
+
+Ordered alternatives retain their priority markers independently of cut state.
+When cuts are used, each alternative also pushes a scope marker and an end marker
+around its operands. Every branching decision records a fresh ID, its selected
+rank and the active invocation/alternative domains. This includes repeat exits,
+unordered permutations and ambiguous shuffle assignments. Domain tags preserve
+scope when branches interleave or subpatterns return; groups do not introduce a
+new invocation domain.
+
+`::` and `::>` choose the nearest dynamic scope of the requested alternative
+kind. `:::` selects the current invocation domain. `<commit>` selects the entire
+candidate history; its optional name selects the nearest active matching frame.
+A cut stores selected decision ranks, removes incompatible registered waits and
+marks retained results for reconsideration. Frontier expansion, monitoring and
+input advancement also reject discarded paths, including paths already in a
+round snapshot. Ordinary result publication still commits ordered alternatives
+through their existing priority mechanism.
+
+Forks preserve decision/domain tags. Starter binding remaps decision IDs per
+recognition start; shuffle branches inherit and merge decisions, including
+assignment choices. Storage and retained-result groups index decision IDs for
+pruning and cleanup. Assertion recognizers start with isolated cut histories.
+Patterns without cuts avoid allocating these additional decision histories.

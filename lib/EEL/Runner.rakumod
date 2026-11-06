@@ -15,14 +15,17 @@ use EEL::Absence;
 unit class EEL::Runner;
 
 class Window { has Int $.id; has Int $.duration; has $.start is rw }
+class EndCutScope { }
 class MarkChoice { has Int $.id; has Int $.rank }
 class Unordered { has @.pending }
 class AnyQuery is EEL::Query { has @.queries; method matches($view) { so @!queries.first({ .matches($view) }) } }
-class EndCapture { has Int $.index; has Hash $.before; has @.positions; has @.array-names; has @.array-indices; has Bool $.ignore; has Int $.window-count = 0; has Hash $.partition is rw = {} }
+class EndCapture { has Int $.index = -1; has Str $.name = ''; has Hash $.before; has @.positions; has @.array-names; has @.array-indices; has Bool $.ignore; has Int $.window-count = 0; has Hash $.partition is rw = {} }
 class Restore { has Bool $.ignore is required; has Int $.window-count = 0; has Hash $.partition is rw = {} }
 class Repeat {
     has EEL::Definition $.node is required;
     has Int $.count = 0;
+    has Int $.min = 0;
+    has Real $.max = Inf;
 }
 class Goal {
     has Int $.id is required;
@@ -35,6 +38,8 @@ class EndGoal { has Int $.id is required }
 
 has Mu @.patterns is required;
 has Str $.rule = 'TOP';
+has $.actions;
+has %!nullable-rules;
 has Real $.lateness = 0;
 has Bool $.record-emissions = False;
 has Int $!lateness-ns;
@@ -55,6 +60,8 @@ has Int $!next-window = 0;
 has Int $!next-selection = 0;
 has %!selection-rekeys;
 has %!selected;
+has %!window-winners;
+has %!window-cutoffs;
 has FatRat $!arrival;
 has EEL::MemoryStorage $!storage .= new;
 has @!starters;
@@ -72,12 +79,19 @@ method EEL-work { %(starters=>$!starter-candidates,forks=>$!forks,rematerialized
 
 has Bool $!initialized = False;
 has Bool $!closed = False;
+has Bool $!finishing = False;
+has Int $!end-order = 0;
 has Bool $!failed = False;
 has Bool $!processing = False;
 has Lock $!lock .= new;
 has Int $!next-goal = 0;
 has Int $!next-choice = 0;
 has %!committed;
+has Bool $!uses-cuts = False;
+has Int $!next-cut = 0;
+has Int $!next-cut-scope = 0;
+has %!cut-committed;
+has %!cut-rekeys;
 has %!rekeys;
 has %!partition-keys;
 has %!partition-values;
@@ -99,7 +113,10 @@ sub nullable($node, %nullable --> Bool) {
         when 'assertion' { True }
         when 'call' { $node.name ne 'event' && (%nullable{$node.name} // False) }
         when 'alternative' | 'ordered-alternative' { so $node.children.first({ nullable($_, %nullable) }) }
-        when 'repeat' { $node.properties<min> == 0 || nullable($node.children[0], %nullable) }
+        when 'repeat' {
+            $node.properties<min> == 0 || (nullable($node.children[0], %nullable)
+                && ($node.properties<min> < 2 || $node.children.elems < 2 || nullable($node.children[1], %nullable)))
+        }
         when 'window-start' | 'partition' | 'local' | 'code' | 'ignore-unexpected' { True }
         default { so $node.children.map({ nullable($_, %nullable) }).all }
     }
@@ -109,7 +126,12 @@ sub productive($node, %rules --> Bool) {
     given $node.kind {
         when 'assertion' { False }
         when 'call' { $node.name eq 'event' || (%rules{$node.name} // False) }
-        when 'repeat' { $node.properties<max> > 0 && productive($node.children[0], %rules) }
+        when 'repeat' {
+            ($node.properties<max> > 0 && productive($node.children[0], %rules))
+                || ($node.children.elems > 1
+                    && ($node.properties<max> > 1 || ($node.properties<max> > 0 && $node.properties<trailing-separator>))
+                    && productive($node.children[1], %rules))
+        }
         default { so $node.children.first({ productive($_, %rules) }).defined }
     }
 }
@@ -117,7 +139,15 @@ sub initial-calls($node, %nullable --> List) {
     given $node.kind {
         when 'call' { return $node.name eq 'event' ?? ().List !! ($node.name,).List }
         when 'alternative' | 'ordered-alternative' | 'unordered' | 'shuffle' { return $node.children.map({ initial-calls($_, %nullable) }).flat.List }
-        when 'repeat' { return $node.properties<max> == 0 ?? ().List !! initial-calls($node.children[0], %nullable) }
+        when 'repeat' {
+            return ().List if $node.properties<max> == 0;
+            my @calls=initial-calls($node.children[0], %nullable);
+            if $node.children.elems > 1 && nullable($node.children[0], %nullable)
+                && ($node.properties<max> > 1 || $node.properties<trailing-separator>) {
+                @calls.append(initial-calls($node.children[1], %nullable));
+            }
+            return @calls.List;
+        }
     }
     my @calls;
     my @children = $node.kind eq 'goal' ?? $node.children.reverse !! $node.children;
@@ -179,7 +209,8 @@ submethod TWEAK() {
             %rules{$rule} = compiled-definition($type,$rule);
             for nodes(%rules{$rule}) -> $node {
                 die "Runner does not support '{$node.kind}' yet at line {$node.line}, column {$node.column}"
-                    unless $node.kind eq any(<pattern sequence ordered unordered group capture-group partition window-start shuffle assertion call local code ignore-unexpected alternative ordered-alternative repeat goal>);
+                    unless $node.kind eq any(<pattern sequence ordered unordered group capture-group partition window-start shuffle assertion call local code ignore-unexpected alternative ordered-alternative repeat goal code-assertion named-capture anchor commit>);
+                $!uses-cuts=True if $node.kind eq 'commit';
                 $!uses-history=True if $node.kind eq 'assertion';
                 $!uses-lookbehind=True if $node.kind eq 'assertion' && ($node.properties<direction> // '') eq 'after';
                 @todo.push($node.name) if $node.kind eq 'call' && $node.name ne 'event';
@@ -196,6 +227,7 @@ submethod TWEAK() {
             }
             last unless $changed;
         }
+        %!nullable-rules{nqp::objectid($type).Str} = %nullable;
         my %graph = %rules.map({ .key => initial-calls(.value, %nullable) });
         sub check-cycle($name, @path) {
             die "Recursive subpattern '$name' can recurse without consuming an event"
@@ -218,7 +250,7 @@ submethod TWEAK() {
         for %rules.values -> $definition {
             for nodes($definition).grep(*.kind eq 'repeat') -> $repeat {
                 die 'Unbounded repetition must consume an event in its body'
-                    if $repeat.properties<max> == Inf && nullable($repeat.children[0], %nullable);
+                    if !$repeat.code.defined && $repeat.properties<max> == Inf && nullable($repeat.children[0], %nullable);
             }
         }
     }
@@ -226,7 +258,7 @@ submethod TWEAK() {
 
 method !frame(Mu $type, Str $rule, Capture $args, Mu :$anchor, :$anchor-time, UInt :$anchor-index, Hash :$saved-partition = {}, Int :$saved-window-count = 0, Str :$capture = '', Bool :$saved-ignore = True) {
     my %captures;
-    my $context = $type.new(:$rule, :args($args), :hash(%captures));
+    my $context = $type.new(:$rule, :args($args), :actions($!actions), :hash(%captures));
     $context.EEL-captures(%captures);
     if $anchor.defined { $context.EEL-accept($anchor, :index($anchor-index)); $context.timestamp=$anchor-time }
     my $method = $type.^find_method($rule);
@@ -252,9 +284,9 @@ method !frame(Mu $type, Str $rule, Capture $args, Mu :$anchor, :$anchor-time, UI
     $context.EEL-args($definition.arguments-code.());
     my @layout=nodes($definition);
     my $share-definition=!$context.args.list.elems && !$context.args.hash.elems && !@layout.first({
-        .kind eq any(<code local partition assertion>) || (.kind eq 'call' && (.name ne 'event' || !.properties<context-free>))
+        (.kind eq 'repeat' && .code.defined) || .kind eq any(<code local partition assertion code-assertion commit>) || (.kind eq 'call' && (.name ne 'event' || !.properties<context-free>))
     }).defined;
-    EEL::Continuation::Frame.new(:@layout,:$share-definition,:$context, :$definition, :$candidate, :captures(%captures), :todo[$definition], :$capture, :$saved-ignore, :$saved-partition, :$saved-window-count)
+    EEL::Continuation::Frame.new(:@layout,:$share-definition,:$context, :$definition, :$candidate, :captures(%captures), :todo[$definition], :$capture, :cut-id($!uses-cuts ?? ++$!next-cut-scope !! 0), :$saved-ignore, :$saved-partition, :$saved-window-count)
 }
 method !start(Mu $type --> List) {
     my $frame = self!frame($type, $!rule, \());
@@ -282,7 +314,7 @@ sub array-captures($frame, $body) {
             $frame.context.EEL-positions(@values);
         }
     }
-    for nodes($body).grep(*.kind eq 'call') -> $call {
+    for nodes($body).grep({ .kind eq any(<call named-capture>) }) -> $call {
         my $name = $call.properties<capture> // '';
         next unless $name.chars;
         unless $frame.arrays{$name}:exists {
@@ -331,7 +363,7 @@ method !fork(EEL::Continuation:D $old --> EEL::Continuation) {
                 !! $instruction.clone
         });
         @frames.push(EEL::Continuation::Frame.new(:layout(@after),:share-definition($frame.share-definition),:$context, :$definition, :candidate($frame.candidate), :captures(%captures),
-            :arrays($copy.copy($frame.arrays)), :initialized($frame.initialized.clone), :@todo, :capture($frame.capture), :saved-ignore($frame.saved-ignore), :saved-partition($frame.saved-partition), :saved-window-count($frame.saved-window-count)));
+            :arrays($copy.copy($frame.arrays)), :initialized($frame.initialized.clone), :@todo, :cut-id($frame.cut-id), :capture($frame.capture), :saved-ignore($frame.saved-ignore), :saved-partition($frame.saved-partition), :saved-window-count($frame.saved-window-count)));
     }
     my %partition-remaps;
     sub remap(%partition) {
@@ -362,6 +394,11 @@ method !fork(EEL::Continuation:D $old --> EEL::Continuation) {
     $fork.positive=gate($old.positive) if $old.positive.defined;
     $fork.negatives=$old.negatives.map({ gate($_) }).Array;
     $fork.terminal=$old.terminal;
+    $fork.window-anchors=$old.window-anchors.map(*.clone).Array;
+    $fork.end-window=$old.end-window;
+    $fork.start-anchor=$old.start-anchor; $fork.eof-wait=$old.eof-wait;
+    $fork.cut-scopes=$old.cut-scopes.map(*.Array).Array;
+    $fork.cut-decisions=$old.cut-decisions.map(*.Array).Array;
     $fork.seen-through=$old.seen-through; $fork.identity-bound=$old.identity-bound;
     $fork.used-events=$old.used-events.clone; $fork.blocked-events=$old.blocked-events.clone;
     $fork.first-time=$old.first-time; $fork.consume-base=$old.consume-base;
@@ -380,9 +417,12 @@ method !choices($current, @choices --> List) {
         return ($current,).List;
     }
     my @branches;
-    for @choices -> $instructions {
+    my $id=$!uses-cuts ?? ++$!next-cut !! 0;
+    for @choices.kv -> $rank,$instructions {
         $current.frames.tail.todo.unshift(|$instructions);
-        @branches.push(self!fork($current));
+        my $branch=self!fork($current);
+        $branch.cut-decisions.push([$id,$rank,self!cut-domains($current)]) if $!uses-cuts;
+        @branches.push($branch);
         $current.frames.tail.todo.shift for ^$instructions.elems;
     }
     @branches.List
@@ -399,7 +439,7 @@ sub future-event($c) {
     so $c.frames.first(-> $frame {
         $frame.todo.first(-> $n {
             $n ~~ EEL::Definition ?? consumes-node($n)
-                !! $n ~~ Repeat ?? $n.count < $n.node.properties<max>
+                !! $n ~~ Repeat ?? $n.count < $n.max
                 !! $n ~~ Unordered ?? so $n.pending
                 !! False
         }).defined
@@ -411,7 +451,7 @@ method !seek(EEL::Continuation:D $continuation --> List) {
     while @work {
         my $current = @work.shift;
         loop {
-            last if $!closed;
+            last if $!closed || self!discarded($current);
             unless $current.frames {
                 if $current.negatives {
                     $current.terminal=True; $current.query=EEL::Query.new;
@@ -436,6 +476,10 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                     $current.completed-at=$!event-order;
                     $current.done=True; @frontier.push($current); last;
                 }
+                if $!actions.defined {
+                    my $action = $!actions.^find_method($frame.context.rule);
+                    $action($!actions, $frame.context) if $action.defined;
+                }
                 $current.frames.pop;
                 if $current.frames {
                     if $current.frames.tail.definition.properties<proto-family> {
@@ -450,6 +494,7 @@ method !seek(EEL::Continuation:D $continuation --> List) {
             }
             my $node = $frame.todo.shift;
             if $node ~~ MarkChoice { $current.choices{$node.id} = $node.rank; next }
+            if $node ~~ EndCutScope { $current.cut-scopes.pop; next }
             if $node ~~ Unordered {
                 next unless $node.pending;
                 my @options = $node.pending.kv.map(-> $i, $child {
@@ -477,7 +522,8 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                 }
                 my $view = Event.new(:index($frame.context.EEL-index), :data($frame.context.data), :timestamp($frame.context.timestamp),
                     :made($frame.context.made), :hash(%captured), :list(@positions));
-                $frame.context.EEL-position($node.index,$view);
+                $node.name.chars ?? capture($frame,$node.name,$view)
+                    !! $frame.context.EEL-position($node.index,$view);
                 $current.ignore-unexpected = $node.ignore;
                 $current.partition = $node.partition; $current.windows.splice($node.window-count) if $current.windows.elems > $node.window-count;
                 next;
@@ -494,13 +540,16 @@ method !seek(EEL::Continuation:D $continuation --> List) {
             }
             if $node ~~ Repeat {
                 my $repeat = $node.node;
-                my $again = $node.count < $repeat.properties<max>;
-                my $stop = $node.count >= $repeat.properties<min>;
+                my $again = $node.count < $node.max;
+                my $stop = $node.count >= $node.min;
                 my @choices;
                 if $again {
-                    @choices.push([$repeat.children[0], Repeat.new(:node($repeat), :count($node.count + 1))]);
+                    @choices.push([|($node.count && $repeat.children.elems > 1 ?? [$repeat.children[1]] !! []), $repeat.children[0], Repeat.new(:node($repeat), :count($node.count + 1), :min($node.min), :max($node.max))]);
                 }
-                @choices.push([]) if $stop;
+                if $stop {
+                    @choices.push([]);
+                    @choices.push([$repeat.children[1]]) if $node.count && $repeat.children.elems > 1 && $repeat.properties<trailing-separator>;
+                }
                 @work.unshift(|self!choices($current, @choices));
                 last;
             }
@@ -527,14 +576,43 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                         $current.negatives.push($gate);
                     }
                 }
+                when 'code-assertion' {
+                    if $current.negatives && !future-event($current) { $current.deferred.push($node); next }
+                    last unless so($node.code.()) == so($node.properties<positive>);
+                }
+                when 'anchor' {
+                    my $window = !$node.properties<absolute> && $current.windows
+                        ?? $current.windows.tail !! Nil;
+                    if $node.properties<start> {
+                        if $window.defined {
+                            last if $window.start.defined;
+                            $current.window-anchors.push({
+                                origin => nqp::objectid($node.origin // $node).Str,
+                                window => $window.id,
+                            });
+                        } else {
+                            last if $!cursor > 0;
+                            $current.start-anchor=True;
+                        }
+                    } else {
+                        $current.end-window = $window.defined && $window.start.defined
+                            ?? $window.start + $window.duration !! Nil;
+                        $current.eof-wait=True; $current.query=EEL::Query.new;
+                        @frontier.push($current); last;
+                    }
+                }
+                when 'commit' { self!cut($current,$node) }
                 when 'window-start' {
                     $current.windows.push(Window.new(:id(++$!next-window), :duration($node.properties<nanoseconds>)));
                 }
-                when 'capture-group' {
-                    my @repeated = nodes($node).grep(*.kind eq 'repeat').map({ |nodes(.children[0]) });
-                    my @names = @repeated.grep(*.kind eq 'call').map({ .properties<capture> // '' }).unique;
+                when 'capture-group' | 'named-capture' {
+                    my @repeated;
+                    for nodes($node).grep(*.kind eq 'repeat') -> $repeat {
+                        @repeated.append(nodes($_)) for $repeat.children;
+                    }
+                    my @names = @repeated.grep({ .kind eq any(<call named-capture>) }).map({ .properties<capture> // '' }).unique;
                     my @indices = @repeated.grep(*.kind eq 'capture-group').map({ .properties<index> }).unique;
-                    $frame.todo.unshift(|$node.children, EndCapture.new(:index($node.properties<index>), :before($frame.captures.Hash.clone), :positions($frame.context.list.Array), :array-names(@names), :array-indices(@indices), :ignore($current.ignore-unexpected), :partition($current.partition), :window-count($current.windows.elems)));
+                    $frame.todo.unshift(|$node.children, EndCapture.new(:index($node.properties<index> // -1), :name($node.properties<capture> // ''), :before($frame.captures.Hash.clone), :positions($frame.context.list.Array), :array-names(@names), :array-indices(@indices), :ignore($current.ignore-unexpected), :partition($current.partition), :window-count($current.windows.elems)));
                 }
                 when 'group' { $frame.todo.unshift(|$node.children, Restore.new(:ignore($current.ignore-unexpected), :partition($current.partition), :window-count($current.windows.elems))) }
                 when 'partition' {
@@ -552,9 +630,10 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                     $frame.initialized{nqp::objectid($node.origin // $node).Str}=True if $node.kind eq 'local';
                 }
                 when 'ordered-alternative' {
+                    $current.cut-scopes.push(['::>', ++$!next-cut-scope]) if $!uses-cuts;
                     my $id = ++$!next-choice;
                     @work.unshift(|self!choices($current,$node.children.kv.map(-> $rank,$child {
-                        [MarkChoice.new(:$id,:$rank),$child]
+                        [MarkChoice.new(:$id,:$rank),$child,|($!uses-cuts ?? [EndCutScope.new] !! [])]
                     }).Array));
                     last;
                 }
@@ -594,14 +673,28 @@ method !seek(EEL::Continuation:D $continuation --> List) {
                 }
                 when 'unordered' { $frame.todo.unshift(Unordered.new(:pending($node.children))) }
                 when 'alternative' {
-                    @work.unshift(|self!choices($current, $node.children.map({[$_]}).Array));
+                    $current.cut-scopes.push(['::', ++$!next-cut-scope]) if $!uses-cuts;
+                    @work.unshift(|self!choices($current, $node.children.map({[$_,|($!uses-cuts ?? [EndCutScope.new] !! [])]}).Array));
                     last;
                 }
                 when 'repeat' {
                     my $policy = $node.properties<selection> // 'all';
                     $current.selections.push([++$!next-selection,$policy,nqp::objectid($node.origin // $node).Str]);
-                    array-captures($frame, $node.children[0]);
-                    $frame.todo.unshift(Repeat.new(:$node));
+                    array-captures($frame, $_) for $node.children;
+                    my ($min, $max) = $node.properties<min max>;
+                    if $node.code.defined {
+                        my $bounds = $node.code.();
+                        if $bounds ~~ Range {
+                            die 'Dynamic repetition requires an inclusive range' if $bounds.excludes-min || $bounds.excludes-max;
+                            ($min, $max) = $bounds.min, $bounds.max;
+                        } else { ($min, $max) = $bounds, $bounds }
+                        die 'Dynamic repetition requires non-negative integer bounds in ascending order'
+                            unless $min ~~ Int:D && $min >= 0
+                                && (($max ~~ Int:D && $max >= $min) || ($max ~~ Real:D && $max == Inf));
+                        die 'Dynamic repetition cannot repeat a nullable item without a finite bound'
+                            if $max == Inf && nullable($node.children[0], %!nullable-rules{nqp::objectid($frame.context.WHAT).Str});
+                    }
+                    $frame.todo.unshift(Repeat.new(:$node, :$min, :$max));
                 }
                 when 'goal' {
                     my $goal = Goal.new(:id(++$!next-goal), :owner($frame.context), :source($node.children[0].source));
@@ -665,7 +758,7 @@ method !new-assertion($c,$node) {
     $owner.todo.splice(0,$owner.todo.elems,$node.children[0]);
     my $seed=$c.clone(:result($owner.context), :frames[$owner], :branch-mode(True),
         :positive(Nil), :negatives[], :deferred[], :terminal(False), :shuffle[], :shuffle-order[],
-        :choices({}), :selections[], :goals[], :consumed(0), :identity-bound(True), :used-events({}), :blocked-events({}), :first-time(Nil), :consume-base(0), :done(False), :completed-at(0));
+        :choices({}), :cut-scopes[], :cut-decisions[], :start-anchor(False), :eof-wait(False), :end-window(Nil), :window-anchors[], :selections[], :goals[], :consumed(0), :identity-bound(True), :used-events({}), :blocked-events({}), :first-time(Nil), :consume-base(0), :done(False), :completed-at(0));
     my $branch=self!fork($seed);
     $owner.todo.splice(0,$owner.todo.elems,|@todo);
     my @seeds=self!seek($branch);
@@ -675,11 +768,11 @@ method !new-assertion($c,$node) {
         :windows($c.windows.map(*.clone).Array), :seeds(@seeds), :active(@seeds.grep(*.done).Array))
 }
 method !monitor-result($gate, Bool :$finish=False) {
-    my @done=$gate.active.grep(*.done);
-    my @live=$finish ?? () !! $gate.active.grep(!*.done);
+    my @done=$gate.active.grep({ .done && !self!discarded($_) });
+    my @live=$finish ?? () !! $gate.active.grep({ !.done && !self!discarded($_) });
     unless $finish {
         for $gate.seeds.kv -> $index,$seed {
-            @live.push($seed) if !$seed.done && (assertion-skips($seed) || !($gate.tried{$index}:exists));
+            @live.push($seed) if !$seed.done && !self!discarded($seed) && (assertion-skips($seed) || !($gate.tried{$index}:exists));
         }
     }
     @done.first(-> $candidate {
@@ -818,7 +911,20 @@ method !assertion-step($c,$event --> List) {
     ($c,).List
 }
 method !settle($c,Str $reason,Instant $time --> List) {
+    return ().List if self!discarded($c);
     return ($c,).List if $c.done;
+    if $c.eof-wait {
+        my $at-eof = $reason eq 'eof' && $!finishing && $!event-order == $!end-order;
+        my $at-window = $reason eq 'window' && $c.end-window.defined
+            && event-time($time) == $c.end-window;
+        return ().List unless $at-eof || $at-window;
+        $c.eof-wait=False;
+        my @out;
+        for self!seek($c) -> $next {
+            @out.append($next.done ?? ($next,) !! self!settle($next,$reason,$time));
+        }
+        return @out.List;
+    }
     if $reason eq 'window' {
         my $end=deadline($c);
         return ($c,).List if !$end.defined || $end > event-time($time);
@@ -848,7 +954,10 @@ method !settle($c,Str $reason,Instant $time --> List) {
         }
         self!absence($_,$reason,$time) for $c.negatives;
         $c.negatives=[]; $c.terminal=False;
-        .code.() for $c.deferred;
+        for $c.deferred -> $node {
+            my $value=$node.code.();
+            return ().List if $node.kind eq 'code-assertion' && so($value) != so($node.properties<positive>);
+        }
         $c.deferred=[];
         return self!seek($c);
     }
@@ -861,6 +970,7 @@ method !settle($c,Str $reason,Instant $time --> List) {
                 self!block-siblings($path,$path.shuffle[$index]);
                 for self!settle($path.shuffle[$index],$reason,$time) -> $branch {
                     my $fork=self!fork($path); $fork.shuffle[$index]=$branch;
+                    self!inherit-gates($fork,$branch);
                     $fork.shuffle-order.push($index) if $branch.done;
                     @next.push($fork);
                 }
@@ -914,6 +1024,7 @@ method !tick($c,Real $now --> List) {
                 self!block-siblings($path,$path.shuffle[$index]);
                 for self!tick($path.shuffle[$index],$now) -> $branch {
                     my $fork=self!fork($path); $fork.shuffle[$index]=$branch;
+                    self!inherit-gates($fork,$branch);
                     $fork.shuffle-order.push($index) if $branch.done;
                     @next.push($fork);
                 }
@@ -1023,8 +1134,9 @@ method !waits($c --> List) {
     (%wait.item,).List
 }
 method !register($c) {
+    return if self!discarded($c);
     my @waits=self!waits($c);
-    my %groups=choice=>$c.choices.keys.Array, selection=>$c.selections.map(*.[0]).Array, goal=>$c.goals.map(*.id).Array, history=>history-positions($c).unique.Array;
+    my %groups=cut=>$c.cut-decisions.map(*.[0]).Array, choice=>$c.choices.keys.Array, selection=>$c.selections.map(*.[0]).Array, goal=>$c.goals.map(*.id).Array, history=>history-positions($c).unique.Array;
     $!storage.register($c.query,$c,:@waits,:%groups,:deadline(wake-deadline($c)))
 }
 # Internal hooks for repeatable differential tests and benchmarks.
@@ -1046,6 +1158,8 @@ method !applicable($c,$event,$view) {
     self!main-applicable($c,$event,$view)
 }
 method !starter-applicable($c,$event,$view) {
+    return False if self!discarded($c);
+    return False if $c.start-anchor && $!event-order != 1;
     return self!in-partition($c,$event) if $c.done;
     return so $c.positive.seeds.first({ self!starter-applicable($_,$event,$view) }).defined if $c.positive.defined;
     if $c.negatives {
@@ -1063,6 +1177,7 @@ method !fresh-position($c,Int $from,Instant $time) {
     self!fresh-position($_,$from,$time) for $c.shuffle;
 }
 method !main-applicable($c,$event,$view) {
+    return False if $c.start-anchor && $!event-order != 1;
     return so $c.shuffle.grep(!*.done).first({ self!applicable($_,$event,$view) }).defined if $c.shuffle;
     self!in-partition($c,$event) && $c.query.matches($view)
 }
@@ -1072,11 +1187,25 @@ method !strict-unexpected($c,$event) {
 }
 method !inherit-gates($parent,$branch) {
     $parent.choices{$_}=$branch.choices{$_} for $branch.choices.keys;
+    for $branch.cut-decisions -> $decision {
+        $parent.cut-decisions.push($decision.Array) unless $parent.cut-decisions.first({ .[0] == $decision[0] }).defined;
+    }
+    for $branch.window-anchors -> %anchor {
+        my $existing=$parent.window-anchors.first({
+            .<origin> eq %anchor<origin> && .<window> == %anchor<window>
+        });
+        if $existing.defined { $existing{$_}=%anchor{$_} for %anchor.keys }
+        else { $parent.window-anchors.push(%anchor.clone) }
+    }
     for $branch.selections -> $entry {
         $parent.selections.push($entry.Array) unless $parent.selections.first({ .[0] == $entry[0] }).defined;
     }
 }
+method !remap-cuts($c) {
+    $c.cut-decisions=$c.cut-decisions.map({ [(%!cut-rekeys{.[0]} // .[0]), .[1], .[2]] }).Array;
+}
 method !remap-gates($c) {
+    self!remap-cuts($c);
     $c.choices=$c.choices.map({ (%!rekeys{.key} // .key) => .value }).Hash;
     $c.selections=$c.selections.map({ [(%!selection-rekeys{.[0]} // .[0]),|.skip(1)] }).Array;
     self!remap-gates($_) for $c.shuffle;
@@ -1119,12 +1248,17 @@ method !advance-shuffle($current,$event) {
     self!remap-gates($_) for $current.shuffle;
     my @indices=(^$current.shuffle.elems).grep({ !$current.shuffle[$_].done && self!applicable($current.shuffle[$_],$event,$!input-view) });
     my @out;
+    my $cut-id=$!uses-cuts && @indices.elems > 1 ?? ++$!next-cut !! 0;
     for @indices -> $i {
         my $path=self!fork($current);
+        $path.cut-decisions.push([$cut-id,$i,self!cut-domains($current)]) if $cut-id;
         my $branch=$path.shuffle[$i];
         self!transfer-locals($path.frames.tail,$branch.frames[0],$path.shuffle-locals);
         $branch.frames[0].context.EEL-merge-fields(EEL::State.new.copy($path.frames.tail.context));
         $branch.choices = (|$path.choices, |$branch.choices).Hash;
+        for $path.cut-decisions -> $decision {
+            $branch.cut-decisions.push($decision.Array) unless $branch.cut-decisions.first({ .[0] == $decision[0] }).defined;
+        }
         if $path.partition && !$path.partition<bound> && $branch.partition && $branch.partition<node>.origin === $path.partition<node>.origin {
             my $key=%!partition-keys{nqp::objectid($branch).Str};
             self!bind-partition($path,$path.partition<node>.origin,$key);
@@ -1152,6 +1286,7 @@ method !advance-shuffle($current,$event) {
                 my $start=$variant.first-time // $!arrival;
                 for $next.windows { .start=$start if !.start.defined || $start < .start }
                 self!sync-windows($_,$next.windows) for $next.shuffle;
+                self!bind-window-anchors($next);
             }
             self!inherit-gates($next,$variant);
             $next.shuffle-order.push($i) if $variant.done;
@@ -1233,6 +1368,14 @@ method !join-shuffle($current) {
 method !bind-start($continuation) {
     return if $continuation.identity-bound;
     $continuation.identity-bound=True;
+    if $!uses-cuts && !$continuation.consumed {
+        for $continuation.cut-decisions -> $decision {
+            my $id=$decision[0];
+            my $new=%!cut-rekeys{$id} //= ++$!next-cut;
+            %!cut-committed{$new}=%!cut-committed{$id} if %!cut-committed{$id}:exists;
+        }
+        self!remap-cuts($continuation);
+    }
     if !$continuation.consumed && $continuation.selections {
         $continuation.selections = $continuation.selections.map(-> $entry {
             %!selection-rekeys{$entry[0]} //= ++$!next-selection;
@@ -1249,6 +1392,7 @@ method !bind-start($continuation) {
     }
 }
 method !advance(EEL::Continuation:D $continuation, $event --> List) {
+    return ().List if $continuation.eof-wait || self!discarded($continuation);
     self!bind-start($continuation);
     if $continuation.done {
         if $continuation.partition && !$continuation.partition<bound> {
@@ -1260,6 +1404,19 @@ method !advance(EEL::Continuation:D $continuation, $event --> List) {
     return self!assertion-step($continuation,$event) if $continuation.positive.defined || $continuation.negatives;
     self!consume($continuation,$event)
 }
+method !bind-window-anchors($c) {
+    for $c.window-anchors.grep({ !(.<start>:exists) }) -> %anchor {
+        my $window=$c.windows.first({ .id == %anchor<window> });
+        next unless $window.defined && $window.start.defined;
+        %anchor<start>=$window.start;
+        %anchor<order>=$!event-order;
+        %anchor<end>=deadline($c);
+        my $partition=$c.partition && $c.partition<bound>
+            ?? (partition-key($c.partition<key>) // '') !! '';
+        %anchor<group>=nqp::objectid($c.result.WHAT).Str
+            ~ '|' ~ %anchor<origin> ~ '|' ~ $partition.chars ~ ':' ~ $partition;
+    }
+}
 method !consume(EEL::Continuation:D $continuation, $event --> List) {
     return ($continuation,).List if $!uses-history && ($continuation.blocked-events{$!event-order}:exists);
     return self!advance-shuffle($continuation,$event) if $continuation.shuffle;
@@ -1268,10 +1425,12 @@ method !consume(EEL::Continuation:D $continuation, $event --> List) {
         $continuation.partition<bound> = True;
     }
     .start = $!arrival for $continuation.windows.grep({ !.start.defined });
+    self!bind-window-anchors($continuation);
     my $frame = $continuation.frames.tail;
     my $call = $frame.todo.shift;
     capture($frame, $call.properties<capture> // '', Event.new(:rule<event>, :index($!event-order), :data($event), :timestamp($!input-view.fields<timestamp>), :event-id($!input-view.fields<event-id>)));
     for $continuation.frames { .context.EEL-accept($event, :index($!event-order)); .context.timestamp = $!input-view.fields<timestamp> }
+    $continuation.start-anchor=False;
     $continuation.consumed++;
     if $!uses-history {
         $continuation.used-events{$!event-order}=True;
@@ -1289,6 +1448,12 @@ method !expired($c,Real $now) {
     so $c.shuffle.grep(!*.done).first({ self!expired($_,$now) }).defined
 }
 method !expire(Real $now) {
+    for %!window-winners.keys -> $group {
+        if %!window-winners{$group}<end> <= $now {
+            %!window-winners{$group}:delete;
+            %!window-cutoffs{$group}:delete;
+        }
+    }
     my %removed;
     for $!storage.expired($now) -> $entry {
         %removed{.id}=True for $entry.continuation.goals;
@@ -1314,7 +1479,8 @@ method close(Bool :$keep-emissions = False) {
     %!goal-failures = ();
     @!emissions=() unless $keep-emissions;
     %!tape=(); @!tape-order=();
-    $!inbox.clear; $!retained.clear; %!selected=(); %!committed = (); %!rekeys = ();
+    %!window-winners=(); %!window-cutoffs=();
+    $!inbox.clear; $!retained.clear; %!selected=(); %!cut-committed=(); %!cut-rekeys=(); %!committed = (); %!rekeys = ();
 }
 method EEL-emissions { my @records=@!emissions; @!emissions=(); @records.List }
 method process($event --> List) {
@@ -1379,8 +1545,8 @@ method !refresh-starters(Int $index) {
 }
 method !round($event, :$prepared --> List) {
     LEAVE { %!partition-keys = (); %!partition-values=() }
-    CATCH { default { %!tape=(); @!tape-order=(); $!retained.clear; %!committed=(); %!rekeys=(); $!failed = True; $!storage.clear; @!starters = (); $!starter-storage.clear; @!starter-ids=(); $!satisfied = SetHash.new; %!goal-failures = (); $!input-view = EEL::Input::Snapshot; .rethrow } }
-    %!rekeys = (); %!selection-rekeys=();
+    CATCH { default { %!tape=(); @!tape-order=(); $!retained.clear; %!cut-committed=(); %!cut-rekeys=(); %!committed=(); %!rekeys=(); $!failed = True; $!storage.clear; @!starters = (); $!starter-storage.clear; @!starter-ids=(); $!satisfied = SetHash.new; %!goal-failures = (); $!input-view = EEL::Input::Snapshot; .rethrow } }
+    %!rekeys = (); %!selection-rekeys=(); %!cut-rekeys=();
     %!partition-keys = ();
     $!arrival = event-time($prepared.fields<timestamp>);
     $!event-order++;
@@ -1438,7 +1604,14 @@ method !round($event, :$prepared --> List) {
     @ready.List
 }
 
+method !window-blocked($c --> Bool) {
+    $c.window-anchors.grep({ .<group>:exists }).first(-> %anchor {
+        my $owner=%!window-winners{%anchor<group>};
+        $owner.defined && $owner<id> ne $c.result.event-id
+    }).defined
+}
 method !queue($continuation) {
+    return if self!window-blocked($continuation);
     $continuation.completed-at = $!event-order;
     $continuation.result-order = ++$!result-order;
     $!retained.add($continuation);
@@ -1458,7 +1631,50 @@ sub selection-better($other,$candidate) {
     if $other.completed-at == $candidate.completed-at { return $other.result-order < $candidate.result-order }
     $shared[1] eq 'first' ?? $other.completed-at < $candidate.completed-at !! $other.completed-at > $candidate.completed-at
 }
+method !cut-domains($c) {
+    [|$c.frames.map(*.cut-id), |$c.cut-scopes.map(*.[1])]
+}
+method !cut($current,$node) {
+    my $scope=$node.properties<scope>;
+    my $domain=0;
+    if $scope eq any('::','::>') {
+        my $active=$current.cut-scopes.reverse.first({ .[0] eq $scope });
+        return unless $active.defined;
+        $domain=$active[1];
+    } elsif $scope eq ':::' {
+        $domain=$current.frames.tail.cut-id;
+    } else {
+        my $args=$node.code.defined ?? $node.code.() !! \();
+        die '<commit> accepts at most one positional pattern name' if $args.hash || $args.list.elems > 1;
+        if $args.list.elems {
+            my $name=$args.list[0];
+            die '<commit> pattern name must be a defined Str' unless $name ~~ Str:D;
+            my $frame=$current.frames.reverse.first({ .context.rule eq $name });
+            die "<commit> has no active pattern '$name'" unless $frame.defined;
+            $domain=$frame.cut-id;
+        }
+    }
+    my %prune;
+    for $current.cut-decisions.grep({ !$domain || .[2].first(* == $domain).defined }) -> $decision {
+        %!cut-committed{$decision[0]}=$decision[1];
+        %prune{$_}=True for $!storage.members('cut',$decision[0]);
+    }
+    for $!storage.entries(%prune.keys) -> $entry {
+        $!storage.remove($entry.id) if self!discarded($entry.continuation);
+    }
+    $!retained.mark-all;
+}
+sub earlier-window(%a,%b) {
+    %a<start> < %b<start> || (%a<start> == %b<start> && %a<order> < %b<order>)
+}
 method !discarded($continuation) {
+    return True if $continuation.window-anchors.first(-> %anchor {
+        (%anchor<group>:exists) && (%!window-cutoffs{%anchor<group>}:exists)
+            && earlier-window(%anchor,%!window-cutoffs{%anchor<group>})
+    }).defined;
+    return True if $!uses-cuts && $continuation.cut-decisions.first({
+        (%!cut-committed{.[0]}:exists) && %!cut-committed{.[0]} != .[1]
+    }).defined;
     so $continuation.choices.kv.map(-> $id,$rank {
         (%!committed{$id}:exists) && %!committed{$id} != $rank
     }).any
@@ -1473,6 +1689,11 @@ method !selection-groups($c --> List) {
     }).List
 }
 method !selection-outranks($other,$candidate --> Bool) {
+    # Window ownership takes precedence over repeat size across starts.
+    return False if $candidate.window-anchors.grep({ .<group>:exists }).first(-> %anchor {
+        $other.window-anchors.grep({ .<group>:exists }).first({ .<group> eq %anchor<group>
+            && (.<start> != %anchor<start> || .<order> != %anchor<order>) }).defined
+    }).defined;
     my @groups=self!selection-groups($candidate);
     my @other=self!selection-groups($other);
     for @groups.kv -> $i,$group {
@@ -1508,6 +1729,22 @@ method !release(--> List) {
                     ($other.choices{$id}:exists) && $other.choices{$id} < $candidate.choices{$id}
                 }).defined
             }).defined;
+            # A completed anchored candidate may publish only while it owns
+            # its window group. Suppressed snapshots are never replayed.
+            my $blocked=self!window-blocked($candidate);
+            my $older=$!retained.snapshot.first(-> $other {
+                $other !=== $candidate && !self!discarded($other)
+                    && $candidate.window-anchors.grep({ .<group>:exists }).first(-> %anchor {
+                        !(%!window-winners{%anchor<group>}:exists)
+                            && $other.window-anchors.grep({ .<group>:exists }).first({
+                                .<group> eq %anchor<group> && earlier-window($_,%anchor)
+                            }).defined
+                    }).defined
+            }).defined if $candidate.window-anchors;
+            if $blocked || $older {
+                $!retained.remove($candidate.result-order);
+                next;
+            }
             my @groups=self!selection-groups($candidate);
             if @groups.first({ %published{$_}:exists }).defined
                 || (@groups && $!retained.snapshot.first(-> $other {
@@ -1519,6 +1756,21 @@ method !release(--> List) {
             }
             %published{$_}=True for @groups;
             my $winner=$candidate;
+            for $winner.window-anchors.grep({ .<group>:exists }) -> %anchor {
+                %!window-winners{%anchor<group>} //= {
+                    id => $winner.result.event-id, end => %anchor<end>
+                };
+                %!window-cutoffs{%anchor<group>}=%anchor.clone;
+            }
+            if $winner.window-anchors {
+                for $!storage.snapshot -> $entry {
+                    $!storage.remove($entry.id) if self!discarded($entry.continuation);
+                }
+                for $!retained.snapshot -> $other {
+                    $!retained.remove($other.result-order)
+                        if self!discarded($other) || self!window-blocked($other);
+                }
+            }
             $!retained.remove($winner.result-order);
             my %prune;
             for $winner.choices.kv -> $id,$rank {
@@ -1543,6 +1795,9 @@ method !release(--> List) {
         if $group.starts-with('choice:') {
             my $id=$group.substr(7);
             %!committed{$id}:delete unless $!storage.has-members('choice',$id) || $!retained.has-group($group);
+        } elsif $group.starts-with('cut:') {
+            my $id=$group.substr(4);
+            %!cut-committed{$id}:delete unless $!storage.has-members('cut',$id) || $!retained.has-group($group);
         } elsif $group.starts-with('selection:') {
             my $id=$group.substr(10);
             %!selected{$id}:delete unless $!storage.has-members('selection',$id) || $!retained.has-group($group);
@@ -1582,6 +1837,7 @@ method !end-round(--> List) {
     my @goals = @pending.map({ .continuation.goals.grep(*.closing) }).flat;
     $!storage.clear;
     my $time=$!arrival.defined ?? Instant.from-posix(0)+$!arrival/1_000_000_000 !! Instant.from-posix(0);
+    $!finishing=True; $!end-order=$!event-order;
     for @pending -> $entry {
         for self!settle($entry.continuation,'eof',$time) -> $next { self!queue($next) if $next.done }
     }
@@ -1599,13 +1855,14 @@ class MatcherSupply does Tappable {
     has @.patterns;
     has Str $.rule;
     has Real $.lateness;
+    has $.actions;
     has EEL::Reemit $.reemit is required;
     method live { $!source.live }
     method sane { True }
     method serial { True }
 
     method tap(&emit, &done, &quit, &tap) {
-        my $runner = EEL::Runner.new(:@!patterns, :$!rule, :$!lateness, :record-emissions);
+        my $runner = EEL::Runner.new(:@!patterns, :$!rule, :$!lateness, :$!actions, :record-emissions);
         my $lock = Lock::Async.new;
         my $closed = False;
         my $upstream;
@@ -1671,5 +1928,5 @@ class MatcherSupply does Tappable {
 # Low-level Supply adapter; Supply.match delegates here.
 method supply(Supply:D $input, :$reemit = False --> Supply) {
     my $policy = EEL::Reemit.new(:selection($reemit));
-    Supply.new(MatcherSupply.new(:source($input), :@!patterns, :$!rule, :reemit($policy), :$!lateness))
+    Supply.new(MatcherSupply.new(:source($input), :@!patterns, :$!rule, :reemit($policy), :$!lateness, :$!actions))
 }

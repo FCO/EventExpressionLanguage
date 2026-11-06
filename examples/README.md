@@ -1,7 +1,7 @@
 # EEL Examples
 
-Run the commands **at the repository root**. All examples are finite;
-the newer examples include the expected output in the `# OUTPUT:` comments.
+Run the commands **at the repository root**. All examples are finite.
+Expected output is documented with `# OUTPUT:` comments where provided.
 
 A suggested reading order is: sequence → objects → correlation → alternatives
 → repetition → strict mode → re-emit → pipeline → recursion → windows.
@@ -33,7 +33,7 @@ A suggested reading order is: sequence → objects → correlation → alternati
 | [Recursion](nested.raku) | Nested blocks with `~` and recursive call to TOP | `raku -Ilib examples/nested.raku` |
 | [Decimal window](time-window.raku) | Sequence bounded by `1.5h` | `raku -Ilib examples/time-window.raku` |
 | [Missing close](missing-close.raku) | `FAILGOAL` and handling by the `quit` callback | `raku -Ilib examples/missing-close.raku` |
-| [Fire risk 2](fire-risk-2.raku) | Named positive capture, heat/humidity in either order, and named absence of rain confirmed by window or EOF | `raku -Ilib examples/fire-risk-2.raku` |
+| [Fire risk with assertions](fire-risk-2.raku) | Named positive capture, heat/humidity in either order, and named absence of rain confirmed by window or EOF | `raku -Ilib examples/fire-risk-2.raku` |
 | [Fire risk](fire-risk.rakumod) | Temperature and humidity of the same area, in any order, within `5min` | `raku -Ilib examples/fire-risk.rakumod` |
 | [Login](login) | Form, unsuccessful attempts and authentication | `raku -Ilib examples/login` |
 | [Port knocking](port-knocking.rakumod) | Two door sequences correlated by IP | `raku -Ilib examples/port-knocking.rakumod` |
@@ -48,7 +48,7 @@ A suggested reading order is: sequence → objects → correlation → alternati
 - Windows use event timestamps. The decimal example replays one hour of historical data immediately; `:lateness` controls reordering and the watermark.
 - Months are fixed periods of 30 days, and years of 365 days.
 
-The textual parser and its legacy fixtures were removed; the examples use `use EEL` and `Supply.match`.
+The examples use `use EEL` and `Supply.match`.
 
 To automatically verify the output of examples with documented output:
 
@@ -61,7 +61,7 @@ Raku's dispatch rules; symbolic candidates represent independent
 recognitions. That is why a leaf and the group containing it can produce separate
 events. The examples catch errors from the Supply and report them after execution.
 
-## Fire Risk 2
+## Fire risk with assertions
 
 `fire-risk-2.raku` is finite. `<data=?event: :area(*.defined)>` captures the area
 without consuming the reading; that occurrence can also satisfy `dry` or `hot`.

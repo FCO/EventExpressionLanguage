@@ -3,7 +3,7 @@ has %!entries;
 has %!groups;
 has %!dirty;
 has %!changed;
-sub groups($c) { (|$c.choices.keys.map({ 'choice:'~$_ }),|$c.selections.map({ 'selection:'~.[0] })).List }
+sub groups($c) { (|$c.cut-decisions.map({ 'cut:'~.[0] }),|$c.choices.keys.map({ 'choice:'~$_ }),|$c.selections.map({ 'selection:'~.[0] })).List }
 method add($c) {
     my $id=$c.result-order;
     %!entries{$id}=$c;

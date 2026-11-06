@@ -34,13 +34,23 @@ role Grammar[Mu $regular-statementlist, Mu $regular-arglist, Mu $regular-block, 
     rule eel-goal {
         '~' <!before '~'> <closer=eel-piece> <body=eel-piece>
     }
-    rule eel-piece { <eel-atom> <eel-quantifier>? }
+    rule eel-piece { <operand=eel-atom> [ <eel-quantifier> [ $<separator-op>=[ '%%' | '%' ] <separator=eel-atom> ]? ]? }
+    token eel-code-assertion {
+        '<' $<polarity>=[ '?' | '!' ] <?before '{'> <block> '>'
+    }
+    rule eel-named-capture { '$<' $<name>=[<[\w-]>+] '>' '=' <eel-piece> }
+    token eel-anchor { $<symbol>=[ '^^' | '$$' | '^' | '$' ] }
+    token eel-commit { $<operator>=[ ':::' | '::>' | '::' ] }
     token eel-quantifier {
-        [ '**' <.ws> $<min>=\d+ [ <.ws> '..' <.ws> $<max>=[\d+|'*'] ]?
+        [ '**' <.ws> [ <dynamic=block> | $<min>=\d+ [ <.ws> '..' <.ws> $<max>=[\d+|'*'] ]? ]
         | $<short>=[<[?*+]>] ] $<selection>=[ '?' | '!' ]?
     }
     token eel-window { $<amount>=[\d+ ['.' \d+]?] $<unit>=['milliseconds'|'millisecond'|'seconds'|'second'|'minutes'|'minute'|'months'|'month'|'years'|'year'|'hours'|'hour'|'days'|'day'|'min'|'sec'|'ms'|'s'|'h'|'d'|'m'|'y'] <!before \w> }
     token eel-atom {
+        | <eel-code-assertion>
+        | <eel-named-capture>
+        | <eel-anchor>
+        | <eel-commit>
         | <eel-goal>
         | <eel-group>
         | <eel-lookaround>
@@ -331,13 +341,19 @@ role Actions is export {
         make node('goal', $/, [cap($/, 'closer').made, cap($/, 'body').made]);
     }
     method eel-piece(Mu $/) {
-        my $n = cap($/, 'eel-atom').made;
-        $n = node('repeat', $/, [$n], :properties(cap($/, 'eel-quantifier').made)) if cap($/, 'eel-quantifier');
+        my $n = cap($/, 'operand').made;
+        if cap($/, 'eel-quantifier') {
+            my %properties = cap($/, 'eel-quantifier').made;
+            %properties<trailing-separator> = (cap($/, 'separator-op') // '').Str.trim eq '%%';
+            my $code = %properties<dynamic>:delete;
+            $n = node('repeat', $/, [$n, |(cap($/, 'separator') ?? [cap($/, 'separator').made] !! [])], :%properties, :$code);
+        }
         make $n;
     }
     method eel-quantifier(Mu $/) {
         my ($min, $max);
-        if cap($/, 'short') {
+        if cap($/, 'dynamic') { ($min, $max) = 0, Inf }
+        elsif cap($/, 'short') {
             ($min, $max) = do given cap($/, 'short').Str { when '?' { 0, 1 }; when '*' { 0, Inf }; default { 1, Inf } }
         } else {
             $min = cap($/, 'min').Str.Int;
@@ -346,7 +362,7 @@ role Actions is export {
         $/.panic('Pattern repetition has an inverted range') if $min > $max;
         my $suffix = (cap($/, 'selection') // '').Str;
         my $selection = $suffix eq '?' ?? 'first' !! ($suffix eq '!' ?? 'last' !! 'all');
-        make %(:$min, :$max, :$selection);
+        make %(:$min, :$max, :$selection, |(cap($/, 'dynamic') ?? { dynamic => cap($/, 'dynamic').ast } !! {}));
     }
     method eel-window(Mu $/) {
         my %units;
@@ -360,13 +376,31 @@ role Actions is export {
         make %(:seconds($seconds == $seconds.Int ?? $seconds.Int !! $seconds), :nanoseconds($ns.Int), :clock<event>, :!inclusive);
     }
     method eel-atom(Mu $/) {
-        make cap($/, 'eel-goal') ?? cap($/, 'eel-goal').made
+        make cap($/, 'eel-code-assertion') ?? cap($/, 'eel-code-assertion').made
+            !! cap($/, 'eel-named-capture') ?? cap($/, 'eel-named-capture').made
+            !! cap($/, 'eel-anchor') ?? cap($/, 'eel-anchor').made
+            !! cap($/, 'eel-commit') ?? cap($/, 'eel-commit').made
+            !! cap($/, 'eel-goal') ?? cap($/, 'eel-goal').made
             !! cap($/, 'eel-lookaround') ?? cap($/, 'eel-lookaround').made
             !! cap($/, 'eel-call') ?? cap($/, 'eel-call').made
             !! cap($/, 'eel-adverb') ?? cap($/, 'eel-adverb').made
             !! cap($/, 'eel-local') ?? cap($/, 'eel-local').made
             !! cap($/, 'block') ?? node('code', $/, :code(cap($/, 'block').ast))
             !! cap($/, 'eel-group').made;
+    }
+    method eel-commit(Mu $/) {
+        make node('commit', $/, :properties({scope => cap($/, 'operator').Str}));
+    }
+    method eel-code-assertion(Mu $/) {
+        make node('code-assertion', $/, :code(cap($/, 'block').ast),
+            :properties({positive => cap($/, 'polarity').Str eq '?'}));
+    }
+    method eel-named-capture(Mu $/) {
+        make node('named-capture', $/, [cap($/, 'eel-piece').made],
+            :properties({capture => cap($/, 'name').Str}));
+    }
+    method eel-anchor(Mu $/) {
+        make node('anchor', $/, :properties({start => cap($/, 'symbol').Str.starts-with('^'), absolute => cap($/, 'symbol').Str.chars == 2}));
     }
     method eel-group(Mu $/) {
         my @children = cap($/, 'eel-alt') ?? [scope-prefix(cap($/, 'eel-alt').made)] !! [];
@@ -390,6 +424,11 @@ role Actions is export {
     }
     method eel-call(Mu $/) {
         $/.panic('A silent call cannot also have a capture alias') if cap($/, 'silent') && cap($/, 'target');
+        if cap($/, 'name').Str eq 'commit' && !cap($/, 'target') && !cap($/, 'silent') && !cap($/, 'assertion') {
+            make node('commit', $/, :properties({scope => 'match'}),
+                :code(cap($/, 'arglist') ?? thunk(RakuAST::Term::Capture.new(cap($/, 'arglist').ast)) !! Nil));
+            return;
+        }
         my $context-free = !cap($/, 'arglist') || so cap($/, 'arglist').ast.args.map({
             $_ ~~ RakuAST::ColonPair && .has-compile-time-value
         }).all;

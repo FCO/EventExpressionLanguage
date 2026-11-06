@@ -32,7 +32,7 @@ event Session {
 
 ## Stream API
 
-`$input.match(EventType, OtherType, :rule<TOP>, :reemit, :lateness(0))` returns a `Supply` with
+`$input.match(EventType, OtherType, :rule<TOP>, :reemit, :lateness(0), :actions($actions))` returns a `Supply` with
 instances of the recognized events. Processing starts at subscription; each
 subscription has its own runner. Inputs can be Hash/Map or defined objects.
 `:type(Temperature)` accepts the class and its subclasses; an explicit `type` field
@@ -73,6 +73,14 @@ slang is lexical. For direct control use `EEL::Runner.new(:patterns[Type])`, `.p
 | `<name>`, `<alias=.name>` | Captured call |
 | `<.name>` | Silent call |
 | `<name(:flag)>`, `<name: :flag>` | Equivalent Raku argument forms |
+| `<?{ ... }>`, `<!{ ... }>` | Zero-consumption boolean code assertion |
+| `ITEM+ % SEP`, `ITEM+ %% SEP` | Separated repetition; `%%` permits a trailing separator |
+| `$<name> = [ ... ]` | Named capture of an expression |
+| `^` | In a window, select a recognition start for emission; otherwise subscription start |
+| `$` | Wait for window closure or EOF; otherwise subscription EOF |
+| `^^`, `$$` | Absolute subscription start and EOF |
+| `::`, `::>` | Cut saved choices in the active `|` or `||` alternative |
+| `:::`, `<commit>`, `<commit('name')>` | Cut saved choices in this pattern, the whole match, or a named caller |
 | `:my $value = ...;` | Local initializer deferred to execution |
 | `{ ... }` | Raku action |
 | `:partition{ ... }` | Switches the partition context |
@@ -118,6 +126,175 @@ transactional. Forks preserve variables, container aliases and multi
 candidates without re-running actions or subscription defaults. Entry rules with no consuming path, recursion without consumption and unbounded nullable repetitions are
 rejected during validation.
 
+### Dynamic repetition bounds
+
+`ITEM ** { expression }` evaluates the block once when that path enters the
+repetition. It accepts a non-negative `Int` for an exact count or an inclusive
+`Range` with non-negative integer endpoints; the upper endpoint may be `Inf`.
+Invalid, inverted or exclusive bounds fail the subscription. Unbounded repetition
+of a nullable item is rejected, including through nullable subpatterns.
+
+```raku
+<header=.event(:type<header>)>
+<item=.event(:type<item>)> ** { $<header>.count }
+
+# A calculated interval, exhaustive selection and separators:
+<item=.event(:type<item>)> ** { 1..$<header>.count }! % <.event(:type<separator>)>
+```
+
+Blocks can read captures, pattern parameters and lexical variables. Evaluated
+bounds survive forks without re-running the block; a new entry into the
+repetition evaluates it again. Selection suffixes and `%`/`%%` work as with
+literal bounds. Static recursion checks conservatively treat dynamic bounds as
+possibly zero and possibly unbounded.
+
+### Boolean code assertions
+
+`<?{ expression }>` succeeds when the block returns a true value;
+`<!{ expression }>` succeeds when it returns a false value. Neither consumes
+an event. A false assertion rejects only its path; a thrown exception fails the
+subscription, like an action error. Blocks can read captures, lexical variables
+and domain attributes in the current pattern context.
+
+```raku
+<request> <response>
+<?{ $<response>.timestamp - $<request>.timestamp < 2 }>
+```
+
+These blocks are evaluated when recognition reaches them, including on
+speculative paths. Returning `False` from an ordinary `{ ... }` action still
+does not reject a path. Like trailing actions, code assertions following a
+terminal negative recognizer are deferred until its absence is confirmed.
+
+### Separated repetitions
+
+`ITEM+ % SEP` recognizes one or more items with a separator between consecutive
+items. `ITEM+ %% SEP` also permits one final separator. `SEP` is an atom; use
+`[ ... ]` for a separator sequence or alternative. Bounds and selection suffixes
+belong to the item quantifier:
+
+```raku
+<chunk> ** 2..4 % <separator>
+<chunk>+! %% [ <separator> <checksum> ]
+```
+
+The bounds count items; result selection counts all consumed events, including
+separators. Item and separator captures accumulate as arrays. A zero-item match
+never consumes a separator. Noise, partitions and windows obey the usual rules:
+use `:!ignore-unexpected` when adjacent input occurrences are required.
+
+### Stream and window anchors
+
+| Anchor | Meaning |
+| --- | --- |
+| `^^` | Before the subscription's first processed input |
+| `$$` | Actual subscription EOF |
+| `^` | Select a recognition start in the innermost active window; otherwise `^^` |
+| `$` | End of the innermost active window or EOF; otherwise `$$` |
+
+Declare a window before its anchors: `:1h ^ ... $`. Each recognition candidate
+starts its own window at its first consumed event. These are overlapping windows,
+not fixed hourly buckets. Within a window, `^` does not require the subscription's
+first event: unrelated input can precede the recognition. It must appear before
+consumption in that same window.
+`^^` cannot move to the first matching event or the first event of a partition.
+The subscription start follows processed temporal order after lateness buffering;
+discarded late inputs do not establish a boundary.
+
+Window `^` also gives emission priority to the oldest completed recognition,
+by its first event's timestamp, with stable input order breaking ties. Priority
+is independent for each derived event type, anchor occurrence and partition key.
+Incomplete older candidates do not block the first emission. Once a candidate
+emits, older starts are discarded. Later starts keep evolving, but their results
+are suppressed until the winner's effective window expires. The winner retains
+priority even after reaching a repetition bound or failing a later assertion.
+Expiration does not replay suppressed results: a successor needs a new complete
+match to emit. Without window `^`, repetition selection keeps its usual behavior.
+
+```raku
+pattern TOP {
+    :1h ^ :partition{ .<distro> }
+    [ <item=.event(:distro(*.defined))> { ++$!count } ] ** 1..4
+}
+```
+
+With a `has UInt $.count = 0` attribute, four or more matching inputs for a distro
+within the winning window emit snapshots with counts `1`, `2`, `3`, `4`, all
+sharing one `event-id`. The first item starts that candidate's hour and is already
+counted. Reaching four does not release ownership: further inputs cannot make a
+different start emit until the winner's window expires. Later starts continue
+recognizing independently. Expiration itself emits nothing; a later start must
+complete again to publish. Use `$` after the repetition to require a final match
+at closure instead of incremental snapshots.
+
+Both end anchors suspend recognition. Another input in the current partition
+invalidates that end wait, even when unexpected events are ignored; other
+partitions do not. Repetition growth can consume the next event and create a
+new end wait. `$` resumes its suffix when the window closes or EOF arrives;
+`$$` resumes only at EOF and fails if its window expires first. Closing a window
+can confirm a new match, unlike merely promoting a suppressed candidate.
+Results retain the timestamp of their last consumed event. Window closure uses
+the existing event-time watermark, not a wall-clock timer.
+
+```raku
+pattern TOP {
+    ^^ :!ignore-unexpected <request> <response> $$
+    { # runs only after EOF confirms the end anchor
+    }
+}
+```
+
+Cancellation confirms neither end anchor. An enclosing window that expires
+before the selected inner window invalidates its end wait. An entry pattern
+must still have a consuming path; a lookbehind's historical boundary is not EOF.
+Code requiring absolute subscription boundaries should use `^^` and `$$`.
+
+### Explicit commitment
+
+Cuts discard saved recognition choices without consuming an event:
+
+| Syntax | Saved choices discarded |
+| --- | --- |
+| `::` | Choices within the innermost active `|` alternative |
+| `::>` | Choices within the innermost active `||` alternative |
+| `:::` | Choices made since entering the current pattern invocation |
+| `<commit>` | Choices made since starting this recognition candidate |
+| `<commit('name')>` | Choices made since entering the nearest active invocation of `name` |
+
+```raku
+[ <header> ::> <body> ] || <other-message>
+[ <header> :: <body> ] | <other-message>
+pattern message { <header> ::: <body> }
+pattern payload { <header> <commit> <body> }
+```
+
+Scopes are dynamic: a cut in a subpattern can target an alternative in its
+caller. `::` skips active `||` alternatives when finding its target; `::>` skips
+active `|` alternatives. If no matching alternative is active, these two cuts
+succeed without effect. Finishing an operand ends its active alternative scope,
+but `:::` and `<commit>` can still discard choices saved before that operand
+finished. Groups do not create pattern invocation boundaries.
+
+`:::` preserves choices made by the caller before entering this invocation;
+`<commit>` also removes those caller choices. Named commitment accepts the usual
+argument forms, including `<commit: 'message'>`; an unknown active name or invalid
+argument is an execution error. Cuts are allowed before the first consumption.
+
+Cuts cover alternative operands, repeat growth/exit decisions, unordered
+permutations and ambiguous shuffle assignments within the selected scope. Choices
+created after a cut remain available. A cut does not publish a result by itself.
+If the selected path later fails or expires, discarded choices cannot return.
+Different recognition starts, including starts in different partitions, keep
+independent choice identities. Already published results are not retracted.
+
+EEL's `|` explores independent paths rather than performing Raku's
+longest-token matching; `::` supplies the corresponding alternative cut scope.
+Recognition explores speculative paths, and the first executed cut in stable
+path order commits its saved choices, including when a higher-priority path is
+still waiting for future input. Actions already run are not rolled back.
+Assertion recognizers have isolated choice histories; cuts inside them affect
+the auxiliary recognition, without cutting the observing main path.
+
 ## Captures and metadata
 
 `$<request>.id` delegates to the field of the hash or the method of the captured
@@ -131,6 +308,21 @@ domain attributes of the derived type. Actions keep using `$!attribute` in the c
 of the type. Groups `(…)` use the compiled numbering, starting from zero, within each
 pattern; `$0`, `$1` and `$result[0]` give access to the captures. Repetitions accumulate
 captures, and subpatterns/protos preserve the positional lists when returning.
+
+`$<name> = ATOM` captures an expression without adding a positional slot.
+The right-hand side includes its quantifier and separator, if present; use
+`$<name> = [ ... ]` to capture a sequence or alternative. For example:
+
+```raku
+$<exchange> = [ <request> <response> ]
+$<batch> = <item>+ % <separator>
+```
+
+The captured `Event` exposes the subcaptures, positional captures, `.made`, data
+and timestamp at the end of that expression. Captures made inside the expression
+remain available in the enclosing pattern too, as with positional groups.
+Repeating the assignment accumulates named group captures in an array. As with
+other groups, partition, window and noise settings are restored when it ends.
 
 Every event has `timestamp` and `event-id`. The timestamp is normalized as `Instant`;
 it accepts `Instant`, `DateTime`, ISO 8601 text with a time zone or a Unix number
@@ -148,6 +340,45 @@ have different IDs, including when an expired winner is replaced by another
 candidate. Each emitted snapshot has the timestamp of its last consumed event;
 previously emitted snapshots remain unchanged.
 
+### Separate Actions and semantic values
+
+Pass an Actions object with `.match(Type, :actions(MyActions.new))` or
+`EEL::Runner.new(:patterns[Type], :actions(MyActions.new))`. When a pattern
+invocation completes, its corresponding method receives the current `Event`
+as `$/`. Modules defining Actions with `make` should import `EEL`; alternatively,
+use the explicit `$/.make(VALUE)` method. Missing methods are ignored. Subpattern Actions run before their
+captures return to the caller, including for silent calls. Inline actions run
+first; the external Action can replace their semantic value.
+
+```raku
+event Batch {
+    pattern TOP {
+        <header=.event(:type<header>)>
+        <item> ** { $<header>.count }
+    }
+    pattern item { <value=.event(:type<item>)> }
+}
+class BatchActions {
+    method item($/) { make $<value>.value }
+    method TOP($/) { make $<item>.map(*.made).Array }
+}
+my $results = $input.match(Batch, :actions(BatchActions.new));
+$results.made.tap(-> $values { say $values });
+```
+
+`make VALUE` (or `$/.make(VALUE)`) sets the semantic value of the current Event.
+`.made` reads it and `.ast` is an alias. A later `make` replaces the previous
+value. The exported `make` also supports ordinary Raku regex and Grammar usage.
+On a `Supply`, `.made` and `.ast` project each published result to that value,
+including successive published updates of the same recognition. They do not
+publish every speculative call to `make`; results without a semantic value
+project to `Any`. When using `:reemit`, projection also applies to re-emitted inputs.
+
+Like inline actions, external Actions can execute on speculative paths that
+later fail. Their external effects are not rolled back. An Actions instance is
+shared by the subscriptions using it; use a separate instance for independent
+mutable action state. Exceptions fail the subscription through `quit`.
+
 ## Partitions, scopes and windows
 
 `:partition{ .<a>, .<b> }` preserves a typed composite key, unlike
@@ -164,7 +395,7 @@ the runner uses internal indexes of equality, types, partitions and ranges, with
 
 Windows are lexical adverbs: `pattern TOP { :5min ... }` or `[ :1.5h ... ]`.
 They start at the first event consumed after the declaration and end with the scope;
-nested windows must be satisfied simultaneously. The postfix syntax was removed outright.
+nested windows must be satisfied simultaneously.
 
 Units: `ms`, `s`, `min`, `h`, `d`, `m`, `y`. Aliases: `millisecond(s)`, `sec`,
 `second(s)`, `minute(s)`, `hour(s)`, `day(s)`, `month(s)`, `year(s)`. `m` is a month;
@@ -188,7 +419,7 @@ window does not call `FAILGOAL`.
 A window on TOP limits the duration of paths, but partitioning and time do not
 impose hard limits on the number of paths, events or memory per window.
 The CLI's polling and `--merge-wait` keep using a monotonic clock, regardless
-of the matcher's windows. `X` and `Z` remain for a future stage.
+of the matcher's windows.
 
 ## Zero-consumption assertions
 
@@ -234,7 +465,7 @@ them only into the suspended continuation. It does not duplicate inputs,
 starters or `:reemit`, and preserves identity, ordinals and timestamps. A result
 can be published after the timestamp of its last consumed event. Without a
 window, pending assertions can retain history indefinitely. See
-[Fire Risk 2](examples/fire-risk-2.raku).
+[Fire risk with assertions](examples/fire-risk-2.raku).
 
 ### Inline lookaround
 
@@ -394,10 +625,7 @@ tolerance. `--transform Module::function` allows converting text into events wit
 Grammar, regex, split or Raku code. See the [CLI guide](examples/cli/README.md)
 and the [catalog of runnable examples](examples/README.md).
 
-The modules of the previous textual parser, its runner/indexes and fixtures were
-removed after separating the current API from those dependencies. Migrate old
-declarations to `use EEL` and use `$supply.match(Type)`; `Event.parse` keeps only an
-explicit migration error. The current matcher uses `EEL::Runner` and `EEL::MemoryStorage`.
+The matcher uses `EEL::Runner` and `EEL::MemoryStorage`.
 
 ### Inline event definitions
 
