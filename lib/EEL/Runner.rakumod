@@ -45,6 +45,8 @@ has @!emissions;
 has Int $!input-order = 0;
 has Int $!event-order = 0;
 has Int $!cursor = 0;
+has Bool $!uses-lookbehind = False;
+has Int $!historical-depth = 0;
 has Bool $!uses-history = False;
 has %!tape;
 has @!tape-order;
@@ -179,6 +181,7 @@ submethod TWEAK() {
                 die "Runner does not support '{$node.kind}' yet at line {$node.line}, column {$node.column}"
                     unless $node.kind eq any(<pattern sequence ordered unordered group capture-group partition window-start shuffle assertion call local code ignore-unexpected alternative ordered-alternative repeat goal>);
                 $!uses-history=True if $node.kind eq 'assertion';
+                $!uses-lookbehind=True if $node.kind eq 'assertion' && ($node.properties<direction> // '') eq 'after';
                 @todo.push($node.name) if $node.kind eq 'call' && $node.name ne 'event';
             }
         }
@@ -504,6 +507,11 @@ method !seek(EEL::Continuation:D $continuation --> List) {
             given $node.kind {
                 when 'pattern' | 'sequence' | 'ordered' { $frame.todo.unshift(|$node.children) }
                 when 'assertion' {
+                    if ($node.properties<direction> // '') eq 'after' {
+                        my $found=self!lookbehind($current,$node);
+                        last unless $found == so $node.properties<positive>;
+                        next;
+                    }
                     my $gate=self!new-assertion($current,$node);
                     my $immediate=self!monitor-result($gate);
                     if $node.properties<positive> {
@@ -621,6 +629,36 @@ method !seek(EEL::Continuation:D $continuation --> List) {
 
 # Assertion recognizers use isolated, forkable frames of the same compiled grammar.
 sub assertion-skips($seed) { $seed.positive.defined ?? $seed.positive.ignore !! $seed.ignore-unexpected }
+method !lookbehind($original,$node --> Bool) {
+    $!historical-depth++;
+    LEAVE $!historical-depth--;
+    my ($order,$cursor,$view,$arrival)=($!event-order,$!cursor,$!input-view,$!arrival);
+    LEAVE { ($!event-order,$!cursor,$!input-view,$!arrival)=($order,$cursor,$view,$arrival) }
+    my $c=$original;
+    my $end=$cursor;
+    if $c.partition && !$c.partition<bound> && (%!tape{$order}:exists) {
+        my %partition=$c.partition;
+        %partition<key>=self!partition-value(%partition,%!tape{$order}.event);
+        %partition<bound>=True;
+        $c=$c.clone(:partition(%partition));
+    }
+    my $target=0;
+    for @!tape-order.grep(* <= $end) -> $index {
+        $target=$index if self!in-partition($c,%!tape{$index}.event);
+    }
+    for 0 .. $end -> $from {
+        $!event-order=$end; $!cursor=$from;
+        my $gate=self!new-assertion($c,$node);
+        for $gate.seeds -> $seed {
+            for self!replay(self!fork($seed),$from) -> $path {
+                for self!settle($path,'eof',$view.fields<timestamp>) -> $done {
+                    return True if $done.done && ($done.completed-at == $target || $done.consumed == 0);
+                }
+            }
+        }
+    }
+    False
+}
 method !new-assertion($c,$node) {
     my $owner=$c.frames.tail;
     my @todo=$owner.todo;
@@ -909,6 +947,7 @@ sub history-positions($c) {
     }
 }
 method !trim-history {
+    return if $!uses-lookbehind;
     return unless $!uses-history;
     my @starts=($!storage.history-start,$!starter-storage.history-start).grep(*.defined);
     my $earliest=@starts ?? @starts.min !! $!event-order;
@@ -950,6 +989,7 @@ method !partition-group(%p) {
     (%p<node>.properties<share-extractor> ?? 'shared:'~nqp::objectid($node.origin // $node) !! 'private:'~nqp::objectid($node)).Str
 }
 method !partition-value(%p,$event) {
+    return freeze-key(%p<node>.code.($event)) if $!historical-depth;
     my $group=self!partition-group(%p);
     return %!partition-values{$group} if %!partition-values{$group}:exists;
     %!partition-values{$group}=freeze-key(%p<node>.code.($event))
@@ -1349,7 +1389,7 @@ method !round($event, :$prepared --> List) {
     self!expire($!arrival);
     $!input-view = $prepared // snapshot($event);
     my $view = $!input-view;
-    unless $!initialized {
+    if !$!initialized || $!uses-lookbehind {
         self!refresh-starters($_) for ^@!patterns.elems;
         $!initialized = True;
     }

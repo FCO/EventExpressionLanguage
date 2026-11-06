@@ -236,6 +236,25 @@ can be published after the timestamp of its last consumed event. Without a
 window, pending assertions can retain history indefinitely. See
 [Fire Risk 2](examples/fire-risk-2.raku).
 
+### Inline lookaround
+
+`<?before P>` and `<!before P>` accept an inline EEL pattern body and use
+the same future-recognition semantics as `<?name>` and `<!name>`.
+For example, `<A> <?before <B> <C>> <B>` verifies the future pair without
+consuming it on the main path. Negative observation ends at the next consumption,
+or at a window deadline/EOF when terminal.
+
+`<?after P>` requires P to recognize in the processed history, ending at the
+current boundary; `<!after P>` requires no such recognition. After a consumption,
+the boundary includes that event. At a candidate start it precedes the proposed
+input. Internal noise follows `:ignore-unexpected`, but trailing noise does not
+move the end of P. Bodies have isolated lexical scopes and captures; their actions
+are speculative, like named assertions.
+
+Patterns using `after` retain snapshots from the beginning of the subscription,
+including events preceding the candidate. This history can grow without bound
+until the runner finishes, fails or is cancelled. Replay does not reemit inputs.
+
 ## Indexed search
 
 See [Runtime architecture](docs/runtime-architecture.md) for how definitions,

@@ -43,6 +43,7 @@ role Grammar[Mu $regular-statementlist, Mu $regular-arglist, Mu $regular-block, 
     token eel-atom {
         | <eel-goal>
         | <eel-group>
+        | <eel-lookaround>
         | <eel-call>
         | <eel-adverb>
         | <eel-local>
@@ -83,6 +84,15 @@ role Grammar[Mu $regular-statementlist, Mu $regular-arglist, Mu $regular-block, 
         my $*IN_REGEX_ASSERTION = False;
         my $*EEL-COLON-ARGS = False;
         $regular-block.(self, |args)
+    }
+    token eel-lookaround {
+        :my $*BLOCK;
+        :my @*EEL-LOCALS;
+        '<' $<polarity>=[ '?' | '!' ] $<direction>=[ 'before' | 'after' ]
+        <?before \s>
+        <.enter-block-scope('Block')>
+        <.ws> <eel-alt>? <.ws> '>'
+        <.leave-block-scope>
     }
     token eel-call {
         :my $*EEL-COLON-ARGS = False;
@@ -351,6 +361,7 @@ role Actions is export {
     }
     method eel-atom(Mu $/) {
         make cap($/, 'eel-goal') ?? cap($/, 'eel-goal').made
+            !! cap($/, 'eel-lookaround') ?? cap($/, 'eel-lookaround').made
             !! cap($/, 'eel-call') ?? cap($/, 'eel-call').made
             !! cap($/, 'eel-adverb') ?? cap($/, 'eel-adverb').made
             !! cap($/, 'eel-local') ?? cap($/, 'eel-local').made
@@ -366,6 +377,16 @@ role Actions is export {
             RakuAST::Statement::Expression.new(:expression(expr($n))))));
         self.attach($/, $*BLOCK);
         make $n.clone(:factory($*BLOCK));
+    }
+    method eel-lookaround(Mu $/) {
+        my @children = cap($/, 'eel-alt') ?? [scope-prefix(cap($/, 'eel-alt').made)] !! [];
+        my $n = node('group', $/, @children);
+        $*BLOCK.replace-body(RakuAST::Blockoid.new(RakuAST::StatementList.new(|@*EEL-LOCALS,
+            RakuAST::Statement::Expression.new(:expression(expr($n))))));
+        self.attach($/, $*BLOCK);
+        make node('assertion',$/,[$n.clone(:factory($*BLOCK))],
+            :properties({positive => cap($/, 'polarity').Str eq '?',
+                direction => cap($/, 'direction').Str, capture => ''}));
     }
     method eel-call(Mu $/) {
         $/.panic('A silent call cannot also have a capture alias') if cap($/, 'silent') && cap($/, 'target');
